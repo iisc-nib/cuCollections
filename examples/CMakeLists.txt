@@ -23,10 +23,10 @@ function(ConfigureExample EXAMPLE_NAME EXAMPLE_SRC)
     set_target_properties(${EXAMPLE_NAME} PROPERTIES
                                           RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/examples")
     target_include_directories(${EXAMPLE_NAME} PRIVATE
-                                             "${CMAKE_CURRENT_SOURCE_DIR}")
+                                             "${CMAKE_CURRENT_SOURCE_DIR}" "/media/ajayakar/space/tools/arrow/include")
     target_compile_options(${EXAMPLE_NAME} PRIVATE --compiler-options=-Wall --compiler-options=-Wextra
       --expt-extended-lambda -Xcompiler -Wno-subobject-linkage)
-    target_link_libraries(${EXAMPLE_NAME} PRIVATE cuco CUDA::cudart)
+    target_link_libraries(${EXAMPLE_NAME} PRIVATE cuco CUDA::cudart "/media/ajayakar/space/tools/arrow/lib/libarrow.so" "/media/ajayakar/space/tools/arrow/lib/libparquet.so")
 endfunction(ConfigureExample)
 
 ###################################################################################################
@@ -45,3 +45,4 @@ ConfigureExample(STATIC_MAP_COUNT_BY_KEY_EXAMPLE "${CMAKE_CURRENT_SOURCE_DIR}/st
 ConfigureExample(STATIC_MULTIMAP_HOST_BULK_EXAMPLE "${CMAKE_CURRENT_SOURCE_DIR}/static_multimap/host_bulk_example.cu")
 ConfigureExample(DISTINCT_COUNT_ESTIMATOR_HOST_BULK_EXAMPLE "${CMAKE_CURRENT_SOURCE_DIR}/distinct_count_estimator/host_bulk_example.cu")
 ConfigureExample(DISTINCT_COUNT_ESTIMATOR_DEVICE_REF_EXAMPLE "${CMAKE_CURRENT_SOURCE_DIR}/distinct_count_estimator/device_ref_example.cu")
+ConfigureExample(TPCH_Q3 "${CMAKE_CURRENT_SOURCE_DIR}/tpch/q11.cu") 
