@@ -1,4 +1,5 @@
 #include<iostream>
+#include <iomanip>
 #include <arrow/io/api.h>
 #include <arrow/table.h>
 #include <arrow/record_batch.h>
@@ -17,7 +18,8 @@
 #include "utils.h"
 
 /**
- * c_custkey: int64
+ * 
+c_custkey: int64
 c_name: large_string
 c_address: large_string
 c_nationkey: int64
@@ -76,7 +78,7 @@ __global__ void build_hash_order(Map map_ref, int64_t* column, int32_t* filter, 
 }
 
 template <typename Map>
-__global__ void build_hash_customer(Map map_ref, int64_t* column, int32_t* filter, size_t column_size, int32_t building_code) {
+__global__ void build_hash_customer(Map map_ref, int32_t* column, int8_t* filter, size_t column_size, int8_t building_code) {
   int tid = (threadIdx.x + blockIdx.x*blockDim.x) / TILE_SIZE;
   auto this_thread = cg::tiled_partition<TILE_SIZE>(cg::this_thread_block());
   
@@ -85,9 +87,10 @@ __global__ void build_hash_customer(Map map_ref, int64_t* column, int32_t* filte
   map_ref.insert(this_thread, cuco::pair{column[tid], tid});
 }
 
-template <typename Map, typename AggMap>
+
+template <typename Map, typename MapCust, typename AggMap>
 __global__ void probe(Map order_hash,
-                      Map customer_hash,
+                      MapCust customer_hash,
                       int32_t* l_shipdate,
                       int64_t* l_orderkey,
                       int64_t* o_custkey,
@@ -106,15 +109,13 @@ __global__ void probe(Map order_hash,
   if (order_idx == order_hash.end()) return;
   auto cust_idx = customer_hash.find(o_custkey[order_idx->second]);
   if (cust_idx == customer_hash.end()) return;
-  //printf("%f\n", l_extendedprice[tid]); 
-  // result[l_orderkey[tid]%l_size] += l_extendedprice[tid];
-  //atomicAdd(result+(l_orderkey[tid]%l_size), l_extendedprice[tid]);
-  //group by o_orderdate, l_orderkey, o_shippriority
   // prepare the packed key
-  int64_t aggkey = 0;
-  aggkey |= l_orderkey[tid];
+  int64_t aggkey = l_orderkey[tid];
   aggkey |= (o_orderdate[order_idx->second] << 32);
-  double res = l_extendedprice[tid]*(1.0f - l_discount[tid]);
+  double res = l_extendedprice[tid]*(1 - l_discount[tid]);
+  if (aggkey == 2456423) {
+    printf("%lf\n", res);
+  }
   auto [slot, is_new_key]= agg_map.insert_and_find(cuco::pair{aggkey, res});
   if (!is_new_key) {
     auto ref = cuda::atomic_ref<typename AggMap::mapped_type, cuda::thread_scope_device>{slot->second};
@@ -127,7 +128,9 @@ struct floatbitwise : cuco::is_bitwise_comparable<double> {
   floatbitwise(double v) : val(v){}
 };
 int main() {
-  std::string dbDir = "/media/ajayakar/space/src/tpch/data/tables/scale-10.0/";
+      std::cout << std::setprecision(10);
+
+  std::string dbDir = "/media/ajayakar/space/src/tpch/data/tables/scale-1.0/";
   std::string lineitem_file = dbDir + "lineitem.parquet";
   std::string orders_file = dbDir + "orders.parquet";
   std::string customer_file = dbDir + "customer.parquet";
@@ -154,10 +157,19 @@ int main() {
   int32_t* o_orderdate = read_column<int32_t>(orders_table, "o_orderdate");
   int64_t* o_shippriority = read_column<int64_t>(orders_table, "o_shippriority");
 
-  int32_t* c_custkey = read_column<int32_t>(customer_table, "c_custkey");
+  int32_t* c_custkey = read_column_typecasted<int32_t>(customer_table, "c_custkey");
   StringDictEncodedColumn* c_mktsegment = read_string_dict_encoded_column(customer_table, "c_mktsegment");
-  int32_t building_code = c_mktsegment->dict["BUILDING"];
+  int8_t building_code = c_mktsegment->dict["BUILDING"];
   //for (auto e: c_mktsegment->dict) std::cout << e.first << " -> " << e.second << std::endl;
+
+  // void processQ3CPU(size_t orders_size, 
+  //                   size_t customer_size, 
+  //                   size_t lineitem_size,
+  //                   int64_t* o_orderkey,
+  //                   int64_t* o_custkey,
+  //                   int64_t* o_orderdate,
+  //                   int64_t* o_shippriority,
+  //                   int32_t*  )
 
   auto o_orderkey_map = cuco::static_map{
     orders_size*2,
@@ -168,38 +180,39 @@ int main() {
   };  
   auto c_custkey_map = cuco::static_map{
     customer_size*2,
-    cuco::empty_key{(int64_t)-1},
-    cuco::empty_value{(int64_t)-1},
-    thrust::equal_to<int64_t>{},
-    cuco::linear_probing<TILE_SIZE, cuco::default_hash_function<int64_t>>()
+    cuco::empty_key{(int32_t)-1},
+    cuco::empty_value{(int32_t)-1},
+    thrust::equal_to<int32_t>{},
+    cuco::linear_probing<TILE_SIZE, cuco::default_hash_function<int32_t>>()
   };  
   auto agg_map = cuco::static_map{customer_size*2,
     cuco::empty_key{(int64_t)-1},
-    cuco::empty_value{(double)-1},
+    cuco::empty_value{0.},
     thrust::equal_to<int64_t>{},
     cuco::linear_probing<TILE_SIZE, cuco::default_hash_function<int64_t>>()
   };
-  int64_t *d_o_orderkey, *d_c_custkey, *d_l_orderkey, *d_o_custkey, *d_o_shippriority; 
-  int32_t *d_o_orderdate, *d_c_mktsegment, *d_l_shipdate, *d_l_orderdate;
+  int64_t *d_o_orderkey, *d_l_orderkey, *d_o_custkey, *d_o_shippriority; 
+  int32_t *d_o_orderdate, *d_l_shipdate, *d_l_orderdate, *d_c_custkey;
+  int8_t *d_c_mktsegment;
   double *d_l_extendedprice, *d_l_discount;
   cudaMalloc(&d_o_orderkey, orders_size*sizeof(int64_t));
-  cudaMalloc(&d_c_custkey, customer_size*sizeof(int64_t));
+  cudaMalloc(&d_c_custkey, customer_size*sizeof(int32_t));
   cudaMalloc(&d_l_orderkey, lineitem_size*sizeof(int64_t));
   cudaMalloc(&d_o_custkey, orders_size*sizeof(int64_t));
   cudaMalloc(&d_o_shippriority, orders_size*sizeof(int64_t));
   cudaMalloc(&d_o_orderdate, orders_size*sizeof(int32_t));
-  cudaMalloc(&d_c_mktsegment, customer_size*sizeof(int32_t));
+  cudaMalloc(&d_c_mktsegment, customer_size*sizeof(int8_t));
   cudaMalloc(&d_l_shipdate, lineitem_size*sizeof(int32_t));
   cudaMalloc(&d_l_extendedprice, lineitem_size*sizeof(double));
   cudaMalloc(&d_l_discount, lineitem_size*sizeof(double));
 
   cudaMemcpy(d_o_orderkey, o_orderkey, orders_size*sizeof(int64_t), cudaMemcpyHostToDevice);
-  cudaMemcpy(d_c_custkey, c_custkey, customer_size*sizeof(int64_t), cudaMemcpyHostToDevice);
+  cudaMemcpy(d_c_custkey, c_custkey, customer_size*sizeof(int32_t), cudaMemcpyHostToDevice);
   cudaMemcpy(d_l_orderkey, l_orderkey, lineitem_size*sizeof(int64_t), cudaMemcpyHostToDevice);
   cudaMemcpy(d_o_custkey, o_custkey, orders_size*sizeof(int64_t), cudaMemcpyHostToDevice);
   cudaMemcpy(d_o_shippriority, o_shippriority, orders_size*sizeof(int64_t), cudaMemcpyHostToDevice);
   cudaMemcpy(d_o_orderdate, o_orderdate, orders_size*sizeof(int32_t), cudaMemcpyHostToDevice);
-  cudaMemcpy(d_c_mktsegment, c_mktsegment->column, customer_size*sizeof(int32_t), cudaMemcpyHostToDevice);
+  cudaMemcpy(d_c_mktsegment, c_mktsegment->column, customer_size*sizeof(int8_t), cudaMemcpyHostToDevice);
   cudaMemcpy(d_l_shipdate, l_shipdate, lineitem_size*sizeof(int32_t), cudaMemcpyHostToDevice);
   cudaMemcpy(d_l_extendedprice, l_extendedprice, lineitem_size*sizeof(double), cudaMemcpyHostToDevice);
   cudaMemcpy(d_l_discount, l_discount, lineitem_size*sizeof(double), cudaMemcpyHostToDevice);
@@ -244,31 +257,14 @@ int main() {
   thrust::device_vector<int64_t> result_keys(agg_map_size);
   agg_map.retrieve_all(result_keys.begin(), result_rev.begin());
 
-  std::vector<double> rev;
+  std::vector<std::pair<double, int64_t>> rev;
   for (int i=0; i<agg_map_size; i++) {
   //   std::cout << result_keys[i] << " : " << result_rev[i] << std::endl;
-    rev.push_back(result_rev[i]);
+    rev.push_back(std::make_pair(result_rev[i], result_keys[i]));
   }
   std::sort(rev.rbegin(), rev.rend());
   std::cout << "Printing the first 10 sorted revenues:\n";
   for (int i=0; i<10; i++) {
-    std::cout << rev[i] << std::endl;
+    std::cout <<  rev[i].second << " : " << rev[i].first << std::endl;
   }
-  // cudaMemcpy(res, d_res, lineitem_size*sizeof(double),cudaMemcpyDeviceToHost);
-  // std::vector<double> r;
-  // for (int i=0; i<lineitem_size; i++) {
-  //   if (res[i]!=0) r.push_back(res[i]);
-  // }
-  // std::sort(r.rbegin(), r.rend());
-  // for (int i=0; i<10; i++) {
-  //   std::cout << r[i] ;
-  //   std::cout << "\t" << l_extendedprice[i] << std::endl;
-  // }
-  // print out the max and min values of o_orderdate, o_shippriority and l_orderkey to see if it can be fit as a composite key of 32 bit
-  // int32_t lok_min = INT_MAX, lok_max = INT_MIN;
-  // for (int i=0; i<orders_size; i++) {
-  //   lok_min = std::min(lok_min, o_orderdate[i]);
-  //   lok_max = std::max(lok_max, o_orderdate[i]);
-  // }
-  // std::cout << "l_orderkey: min=" << lok_min << " max=" << lok_max << std::endl;
 }

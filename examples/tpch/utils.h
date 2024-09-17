@@ -14,8 +14,8 @@ struct StringColumn {
   StringColumn() {}
 };
 struct StringDictEncodedColumn {
-  std::unordered_map<std::string, int32_t> dict;
-  int32_t* column;
+  std::unordered_map<std::string, int8_t> dict;
+  int8_t* column;
 };
 
 template<typename T>
@@ -78,7 +78,7 @@ T* read_column_typecasted(std::shared_ptr<arrow::Table> &table, const std::strin
 StringDictEncodedColumn* read_string_dict_encoded_column(std::shared_ptr<arrow::Table> &table, const std::string &column) {
   auto arrow_col = table->GetColumnByName(column);
   StringDictEncodedColumn* result = new StringDictEncodedColumn();
-  int32_t uid = 0;
+  int8_t uid = 0;
   for (auto chunk: arrow_col->chunks()) {
     auto string_arr = std::static_pointer_cast<arrow::LargeStringArray>(chunk);
     for (int i=0; i < string_arr->length(); i++) {
@@ -88,7 +88,7 @@ StringDictEncodedColumn* read_string_dict_encoded_column(std::shared_ptr<arrow::
       }
     }
   }
-  result->column = new int32_t[table->num_rows()];
+  result->column = new int8_t[table->num_rows()];
   int j = 0; 
   for (auto chunk: arrow_col->chunks()) {
     auto string_arr = std::static_pointer_cast<arrow::LargeStringArray>(chunk);
