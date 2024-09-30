@@ -45,4 +45,5 @@ ConfigureExample(STATIC_MAP_COUNT_BY_KEY_EXAMPLE "${CMAKE_CURRENT_SOURCE_DIR}/st
 ConfigureExample(STATIC_MULTIMAP_HOST_BULK_EXAMPLE "${CMAKE_CURRENT_SOURCE_DIR}/static_multimap/host_bulk_example.cu")
 ConfigureExample(DISTINCT_COUNT_ESTIMATOR_HOST_BULK_EXAMPLE "${CMAKE_CURRENT_SOURCE_DIR}/distinct_count_estimator/host_bulk_example.cu")
 ConfigureExample(DISTINCT_COUNT_ESTIMATOR_DEVICE_REF_EXAMPLE "${CMAKE_CURRENT_SOURCE_DIR}/distinct_count_estimator/device_ref_example.cu")
-ConfigureExample(TPCH_Q3 "${CMAKE_CURRENT_SOURCE_DIR}/tpch/q3.cu") 
+# ConfigureExample(TPCH_Q3 "${CMAKE_CURRENT_SOURCE_DIR}/tpch/q3.cu") 
+ConfigureExample(TPCH_Q1 "${CMAKE_CURRENT_SOURCE_DIR}/tpch/q1.cu") 
