@@ -113,9 +113,6 @@ __global__ void probe(Map order_hash,
   int64_t aggkey = l_orderkey[tid];
   aggkey |= (o_orderdate[order_idx->second] << 32);
   double res = l_extendedprice[tid]*(1 - l_discount[tid]);
-  if (aggkey == 2456423) {
-    printf("%lf\n", res);
-  }
   auto [slot, is_new_key]= agg_map.insert_and_find(cuco::pair{aggkey, res});
   if (!is_new_key) {
     auto ref = cuda::atomic_ref<typename AggMap::mapped_type, cuda::thread_scope_device>{slot->second};
