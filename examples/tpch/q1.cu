@@ -115,9 +115,9 @@ __global__ void compute_disc_charge(double* disc_price,
   charge[tid]     = disc_price[tid] + l_tax[tid] * disc_price[tid];
 }
 
-// if the domain of the group by is known at compile time, then we can use that information to group by
-// in this case since we have dictionary encoded certain columns (we can assume that this metadata is present in 
-// the database), and hence calculate the index of the group by accordingly. 
+// if the domain of the group by is known at compile time, then we can use that information to group
+// by in this case since we have dictionary encoded certain columns (we can assume that this
+// metadata is present in the database), and hence calculate the index of the group by accordingly.
 __global__ void aggregate(size_t lineitem_size,
                           int8_t* l_returnflag,
                           int8_t* l_linestatus,
@@ -151,29 +151,37 @@ __global__ void aggregate(size_t lineitem_size,
   atomicAdd(&(sum_discount[agg_key]), l_discount[tid]);
 }
 
-__global__  void aggregate_avg_columns(size_t agg_table_size, double* sum_base_price, double* avg_price, int64_t* sum_qty, double* avg_qty, double* sum_discount, double* avg_discount, int64_t* count_order) {
+__global__ void aggregate_avg_columns(size_t agg_table_size,
+                                      double* sum_base_price,
+                                      double* avg_price,
+                                      int64_t* sum_qty,
+                                      double* avg_qty,
+                                      double* sum_discount,
+                                      double* avg_discount,
+                                      int64_t* count_order)
+{
   int tid = threadIdx.x + blockIdx.x * blockDim.x;
   if (tid >= agg_table_size) return;
 
   if (count_order[tid] == 0) return;
-  avg_price[tid] = sum_base_price[tid]/count_order[tid];
-  avg_qty[tid] = (float)sum_qty[tid]/(float)count_order[tid];
-  avg_discount[tid] = sum_discount[tid]/count_order[tid];
+  avg_price[tid]    = sum_base_price[tid] / count_order[tid];
+  avg_qty[tid]      = (float)sum_qty[tid] / (float)count_order[tid];
+  avg_discount[tid] = sum_discount[tid] / count_order[tid];
 }
 
-int main()
+int main(int argc, const char** argv)
 {
   std::cout << std::setprecision(10);
 
-  std::string dbDir         = "/media/ajayakar/space/src/tpch/data/tables/scale-1.0/";
+  std::string dbDir         = getDataDir(argv, argc);
   std::string lineitem_file = dbDir + "lineitem.parquet";
 
   auto lineitem_table  = getArrowTable(lineitem_file);
   size_t lineitem_size = lineitem_table->num_rows();
 
-  int64_t* l_quantity    = read_column<int64_t>(lineitem_table, "l_quantity");
-  int32_t* l_shipdate = read_column<int32_t>(lineitem_table, "l_shipdate");
-  double* l_ep_test = read_column<double>(lineitem_table, "l_extendedprice");
+  int64_t* l_quantity     = read_column<int64_t>(lineitem_table, "l_quantity");
+  int32_t* l_shipdate     = read_column<int32_t>(lineitem_table, "l_shipdate");
+  double* l_ep_test       = read_column<double>(lineitem_table, "l_extendedprice");
   double* l_extendedprice = read_column<double>(lineitem_table, "l_extendedprice");
   double* l_discount      = read_column<double>(lineitem_table, "l_discount");
   double* l_tax           = read_column<double>(lineitem_table, "l_tax");
@@ -183,7 +191,7 @@ int main()
     read_string_dict_encoded_column(lineitem_table, "l_linestatus");
 
   int8_t *d_l_returnflag, *d_l_linestatus;
-  int32_t *d_l_shipdate;
+  int32_t* d_l_shipdate;
   cudaMalloc(&d_l_linestatus, sizeof(int8_t) * lineitem_size);
   cudaMemcpy(
     d_l_linestatus, l_linestatus->column, sizeof(int8_t) * lineitem_size, cudaMemcpyHostToDevice);
@@ -191,8 +199,7 @@ int main()
   cudaMemcpy(
     d_l_returnflag, l_returnflag->column, sizeof(int8_t) * lineitem_size, cudaMemcpyHostToDevice);
   cudaMalloc(&d_l_shipdate, sizeof(int32_t) * lineitem_size);
-  cudaMemcpy(
-    d_l_shipdate, l_shipdate, sizeof(int32_t) * lineitem_size, cudaMemcpyHostToDevice);
+  cudaMemcpy(d_l_shipdate, l_shipdate, sizeof(int32_t) * lineitem_size, cudaMemcpyHostToDevice);
 
   // compute the sum_disc_price and sum_charge
   int64_t* d_l_quantity;
@@ -221,7 +228,8 @@ int main()
   // create result columns
   size_t estimated_groups_size = l_returnflag->dict.size() * l_linestatus->dict.size();
   int64_t *d_sum_qty, *d_count_order;
-  double *d_sum_base_price, *d_sum_disc_price, *d_sum_charge, *d_avg_qty, *d_avg_price, *d_avg_disc, *d_sum_discount;
+  double *d_sum_base_price, *d_sum_disc_price, *d_sum_charge, *d_avg_qty, *d_avg_price, *d_avg_disc,
+    *d_sum_discount;
 
   cudaMalloc(&d_sum_qty, sizeof(int64_t) * estimated_groups_size);
   cudaMemset(d_sum_qty, 0, sizeof(int64_t) * estimated_groups_size);
@@ -253,54 +261,63 @@ int main()
   // create the map to be aggregated in
 
   std::cout << "Line status dict: \n";
-  for (auto e: l_linestatus->dict) {
+  for (auto e : l_linestatus->dict) {
     std::cout << e.first << ": " << (int32_t)e.second << "\n";
   }
   std::cout << "Size: " << l_linestatus->dict.size();
   std::cout << "\n";
   std::cout << "return flag dict: \n";
-  for (auto e: l_returnflag->dict) {
+  for (auto e : l_returnflag->dict) {
     std::cout << e.first << ": " << (int32_t)e.second << "\n";
   }
   std::cout << "Size: " << l_returnflag->dict.size();
   std::cout << "\n";
   // launch the kernel to aggregate
   aggregate<<<std::ceil((float)lineitem_size / (float)TB), TB>>>(lineitem_size,
-                                                   d_l_returnflag,
-                                                   d_l_linestatus,
-                                                   d_l_shipdate,
-                                                   d_l_quantity,
-                                                   d_l_extendedprice,
-                                                   d_l_discount,
-                                                   d_l_tax,
-                                                   d_disc_price,
-                                                   d_charge,
-                                                   d_sum_charge,
-                                                   d_sum_base_price,
-                                                   d_sum_disc_price,
-                                                   d_sum_discount,
-                                                   d_sum_qty,
-                                                   d_count_order,
-                                                   l_linestatus->dict.size());
-  aggregate_avg_columns<<<std::ceil((float)estimated_groups_size/(float)TB), TB>>>(estimated_groups_size, d_sum_base_price, d_avg_price, d_sum_qty, d_avg_qty, d_sum_discount, d_avg_disc, d_count_order);
+                                                                 d_l_returnflag,
+                                                                 d_l_linestatus,
+                                                                 d_l_shipdate,
+                                                                 d_l_quantity,
+                                                                 d_l_extendedprice,
+                                                                 d_l_discount,
+                                                                 d_l_tax,
+                                                                 d_disc_price,
+                                                                 d_charge,
+                                                                 d_sum_charge,
+                                                                 d_sum_base_price,
+                                                                 d_sum_disc_price,
+                                                                 d_sum_discount,
+                                                                 d_sum_qty,
+                                                                 d_count_order,
+                                                                 l_linestatus->dict.size());
+  aggregate_avg_columns<<<std::ceil((float)estimated_groups_size / (float)TB), TB>>>(
+    estimated_groups_size,
+    d_sum_base_price,
+    d_avg_price,
+    d_sum_qty,
+    d_avg_qty,
+    d_sum_discount,
+    d_avg_disc,
+    d_count_order);
 
-  double* cpu_sum_base_price_2 = (double*)malloc(sizeof(double)*estimated_groups_size);
-  memset(cpu_sum_base_price_2, 0., sizeof(double)*estimated_groups_size);
-  for (int i=0; i<lineitem_size; i++) {
+  double* cpu_sum_base_price_2 = (double*)malloc(sizeof(double) * estimated_groups_size);
+  memset(cpu_sum_base_price_2, 0., sizeof(double) * estimated_groups_size);
+  for (int i = 0; i < lineitem_size; i++) {
     if (l_shipdate[i] > 10471) continue;
-    int agg_key = ((int32_t)l_returnflag->column[i]) * l_linestatus->dict.size() + ((int32_t)l_linestatus->column[i]);
+    int agg_key = ((int32_t)l_returnflag->column[i]) * l_linestatus->dict.size() +
+                  ((int32_t)l_linestatus->column[i]);
     cpu_sum_base_price_2[agg_key] += l_ep_test[i];
   }
 
   // gather and print the results
-  int64_t* sum_qty      = (int64_t*)malloc(sizeof(int64_t) * estimated_groups_size);
+  int64_t* sum_qty       = (int64_t*)malloc(sizeof(int64_t) * estimated_groups_size);
   double* sum_base_price = (double*)malloc(sizeof(double) * estimated_groups_size);
   double* sum_disc_price = (double*)malloc(sizeof(double) * estimated_groups_size);
   double* sum_charge     = (double*)malloc(sizeof(double) * estimated_groups_size);
   double* avg_qty        = (double*)malloc(sizeof(double) * estimated_groups_size);
   double* avg_price      = (double*)malloc(sizeof(double) * estimated_groups_size);
   double* avg_disc       = (double*)malloc(sizeof(double) * estimated_groups_size);
-  int64_t* count_order  = (int64_t*)malloc(sizeof(int64_t) * estimated_groups_size);
+  int64_t* count_order   = (int64_t*)malloc(sizeof(int64_t) * estimated_groups_size);
   cudaMemcpy(sum_qty, d_sum_qty, sizeof(int64_t) * estimated_groups_size, cudaMemcpyDeviceToHost);
   cudaMemcpy(
     count_order, d_count_order, sizeof(int64_t) * estimated_groups_size, cudaMemcpyDeviceToHost);
@@ -315,7 +332,8 @@ int main()
   cudaMemcpy(
     sum_charge, d_sum_charge, sizeof(double) * estimated_groups_size, cudaMemcpyDeviceToHost);
   cudaMemcpy(avg_qty, d_avg_qty, sizeof(double) * estimated_groups_size, cudaMemcpyDeviceToHost);
-  cudaMemcpy(avg_price, d_avg_price, sizeof(double) * estimated_groups_size, cudaMemcpyDeviceToHost);
+  cudaMemcpy(
+    avg_price, d_avg_price, sizeof(double) * estimated_groups_size, cudaMemcpyDeviceToHost);
   cudaMemcpy(avg_disc, d_avg_disc, sizeof(double) * estimated_groups_size, cudaMemcpyDeviceToHost);
   std::cout << "sum_qty\tsum_base_price\tsum_disc_price\tsum_charge\tavg_qty\tavg_price\tavg_"
                "disc\tcount_order\n";

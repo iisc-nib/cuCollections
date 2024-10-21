@@ -50,7 +50,7 @@ __global__ void aggregate_revenue(int32_t* l_shipdate,
   // filter with quantity
   if (l_quantity[tid] >= 24) return;
 
-  double rev = l_extendedprice[tid] * l_discount[tid]; 
+  double rev = l_extendedprice[tid] * l_discount[tid];
   atomicAdd(result, rev);
 }
 
@@ -58,26 +58,25 @@ double cpu_aggregate_revenue(int32_t* l_shipdate,
                              int64_t* l_quantity,
                              double* l_discount,
                              double* l_extendedprice,
-                             size_t lineitem_size) 
+                             size_t lineitem_size)
 {
   double res = 0;
-  for (size_t i=0; i<lineitem_size; i++) {
-  // filter with date
-  if (l_shipdate[i] < 8766 || l_shipdate[i] >= 9131) continue;
-  // filter with discount
-  if (l_discount[i] < (0.05) || l_discount[i] > (0.07)) continue;
-  // filter with quantity
-  if (l_quantity[i] >= 24) continue;
-  res += (l_extendedprice[i] * l_discount[i]);
+  for (size_t i = 0; i < lineitem_size; i++) {
+    // filter with date
+    if (l_shipdate[i] < 8766 || l_shipdate[i] >= 9131) continue;
+    // filter with discount
+    if (l_discount[i] < (0.05) || l_discount[i] > (0.07)) continue;
+    // filter with quantity
+    if (l_quantity[i] >= 24) continue;
+    res += (l_extendedprice[i] * l_discount[i]);
   }
   return res;
-
 }
-int main()
+int main(int argc, char** argv)
 {
   std::cout << std::setprecision(10);
 
-  std::string dbDir         = "/media/ajayakar/space/src/tpch/data/tables/scale-1.0/";
+  std::string dbDir         = getDataDir(argv, argc);
   std::string lineitem_file = dbDir + "lineitem.parquet";
 
   auto lineitem_table  = getArrowTable(lineitem_file);
@@ -108,9 +107,8 @@ int main()
   cudaMalloc(&d_res, sizeof(double));
   cudaMemset(d_res, 0., sizeof(double));
 
-  aggregate_revenue<<<std::ceil((float)lineitem_size / (float)TB), TB>>> (
-    d_l_shipdate, d_l_quantity, d_l_discount, d_l_extendedprice, lineitem_size, d_res
-  );
+  aggregate_revenue<<<std::ceil((float)lineitem_size / (float)TB), TB>>>(
+    d_l_shipdate, d_l_quantity, d_l_discount, d_l_extendedprice, lineitem_size, d_res);
 
   double res;
   cudaMemcpy(&res, d_res, sizeof(double), cudaMemcpyDeviceToHost);
