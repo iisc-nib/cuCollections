@@ -62,6 +62,7 @@ Debug
 build/
 cpp/build/
 cpp/thirdparty/googletest/
+build*/
 
 ## Eclipse IDE
 .project

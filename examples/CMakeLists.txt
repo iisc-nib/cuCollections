@@ -18,15 +18,63 @@ cmake_minimum_required(VERSION 3.23.1 FATAL_ERROR)
 ###################################################################################################
 # - compiler function -----------------------------------------------------------------------------
 
+# find_package(Arrow REQUIRED)
+# find_package(Parquet REQUIRED)
+
+# Optionally specify paths to custom builds
+option(ARROW_USE_CUSTOM_PATH "Use a custom Arrow build" OFF)
+option(PARQUET_USE_CUSTOM_PATH "Use a custom Parquet build" OFF)
+
+# If the user wants to specify custom paths, provide CMake options for them
+if(ARROW_USE_CUSTOM_PATH)
+    set(ARROW_ROOT "" CACHE PATH "Path to custom Arrow build")
+endif()
+
+if(PARQUET_USE_CUSTOM_PATH)
+    set(PARQUET_ROOT "" CACHE PATH "Path to custom Parquet build")
+endif()
+
+# Try to find Arrow and Parquet packages (global/system installation)
+if(NOT ARROW_USE_CUSTOM_PATH)
+    find_package(Arrow CONFIG REQUIRED)
+endif()
+
+if(NOT PARQUET_USE_CUSTOM_PATH)
+    find_package(Parquet CONFIG REQUIRED)
+endif()
+
+# If custom paths are specified, manually set the include and library directories
+if(ARROW_USE_CUSTOM_PATH AND ARROW_ROOT)
+    message(STATUS "Using custom Arrow build at ${ARROW_ROOT}")
+    include_directories(${ARROW_ROOT}/include)
+    link_directories(${ARROW_ROOT}/lib)
+    set(ARROW_LIBS ${ARROW_ROOT}/lib/libarrow.so)
+else()
+    message(STATUS "Using system-installed Arrow")
+    set(ARROW_LIBS libarrow.so)  # Automatically found by find_package
+endif()
+
+if(PARQUET_USE_CUSTOM_PATH AND PARQUET_ROOT)
+    message(STATUS "Using custom Parquet build at ${PARQUET_ROOT}")
+    include_directories(${PARQUET_ROOT}/include)
+    link_directories(${PARQUET_ROOT}/lib)
+    set(PARQUET_LIBS ${PARQUET_ROOT}/lib/libparquet.so)
+else()
+    message(STATUS "Using system-installed Parquet")
+    set(PARQUET_LIBS libparquet.so)  # Automatically found by find_package
+endif()
+
 function(ConfigureExample EXAMPLE_NAME EXAMPLE_SRC)
     add_executable(${EXAMPLE_NAME} "${EXAMPLE_SRC}")
     set_target_properties(${EXAMPLE_NAME} PROPERTIES
                                           RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/examples")
     target_include_directories(${EXAMPLE_NAME} PRIVATE
-                                             "${CMAKE_CURRENT_SOURCE_DIR}" "/media/ajayakar/space/tools/arrow/include")
+                                             "${CMAKE_CURRENT_SOURCE_DIR}"
+                                              ${arrow_SOURCE_DIR}/cpp/src
+                                              ${arrow_BINARY_DIR}/cpp/src)
     target_compile_options(${EXAMPLE_NAME} PRIVATE --compiler-options=-Wall --compiler-options=-Wextra
       --expt-extended-lambda -Xcompiler -Wno-subobject-linkage)
-    target_link_libraries(${EXAMPLE_NAME} PRIVATE cuco CUDA::cudart "/media/ajayakar/space/tools/arrow/lib/libarrow.so" "/media/ajayakar/space/tools/arrow/lib/libparquet.so")
+    target_link_libraries(${EXAMPLE_NAME} PRIVATE cuco CUDA::cudart ${ARROW_LIBS} ${PARQUET_LIBS})
 endfunction(ConfigureExample)
 
 ###################################################################################################
