@@ -43,6 +43,7 @@ __global__ void aggregate_revenue(int32_t* l_shipdate,
                                   double* result)
 {
   int tid = threadIdx.x + blockIdx.x * blockDim.x;
+  if (tid >= lineitem_size) return;
   // filter with date
   if (l_shipdate[tid] < 8766 || l_shipdate[tid] >= 9131) return;
   // filter with discount
@@ -72,7 +73,7 @@ double cpu_aggregate_revenue(int32_t* l_shipdate,
   }
   return res;
 }
-int main(int argc, char** argv)
+int main(int argc, const char** argv)
 {
   std::cout << std::setprecision(10);
 

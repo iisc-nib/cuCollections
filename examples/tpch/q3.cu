@@ -136,7 +136,7 @@ struct floatbitwise : cuco::is_bitwise_comparable<double> {
   floatbitwise(double v) : val(v) {}
 };
 
-int main(int argc, char** argv)
+int main(int argc, const char** argv)
 {
   std::cout << std::setprecision(10);
 
