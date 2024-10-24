@@ -61,7 +61,13 @@ order by
 #include <iostream>
 
 CUCO_DECLARE_BITWISE_COMPARABLE(double);
+void CUDACHKERR() {
 
+  auto err = cudaGetLastError();
+  if (err != cudaSuccess) {
+    std::cout << "CUDA ERROR: " << cudaGetErrorString(err) << "\n"; 
+  }
+} 
 #define TILE_SIZE 1
 namespace cg = cooperative_groups;
 template <typename Map>
@@ -78,7 +84,52 @@ struct multijoin_t {
   int32_t s_idx;
   int32_t ps_idx;
 };
+struct multijoin_t_pol {
+  int32_t p_idx;
+  int32_t o_idx;
+  int32_t l_idx;
+};
 
+
+template <typename ProbeMap>
+__global__ void probe_lineitem_size(ProbeMap p_map_ref,
+                                    ProbeMap o_map_ref,
+                                    int32_t* p_partkey, int32_t* l_partkey,
+                                    int32_t* o_orderkey, int32_t* l_orderkey,
+                                    int32_t* res, size_t l_size) 
+{
+  int32_t tid = (threadIdx.x + blockIdx.x * blockDim.x);
+  if (tid >= l_size) return;
+  // lineitem with part
+  auto p_idx = p_map_ref.find(l_partkey[tid]);
+  if (p_idx == p_map_ref.end()) return;
+  // lineitem with order
+  auto o_idx = o_map_ref.find(l_orderkey[tid]);
+  if (o_idx == o_map_ref.end()) return;
+  atomicAdd(res,1);
+}
+
+template <typename ProbeMap>
+__global__ void probe_lineitem(ProbeMap p_map_ref,
+                               ProbeMap o_map_ref,
+                               int32_t* p_partkey, int32_t* l_partkey,
+                               int32_t* o_orderkey, int32_t* l_orderkey,
+                               int32_t* res_idx, size_t l_size,
+                               multijoin_t_pol* result ) 
+{
+  int32_t tid = (threadIdx.x + blockIdx.x * blockDim.x);
+  if (tid >= l_size) return;
+  // lineitem with part
+  auto p_idx = p_map_ref.find(l_partkey[tid]);
+  if (p_idx == p_map_ref.end()) return;
+  // lineitem with order
+  auto o_idx = o_map_ref.find(l_orderkey[tid]);
+  if (o_idx == o_map_ref.end()) return;
+  auto idx = atomicAdd(res_idx, 1);
+  result[idx].p_idx = p_idx->second;
+  result[idx].o_idx = o_idx->second;
+  result[idx].l_idx = tid;
+}
 template <typename ProbeMap>
 __global__ void probe_partsupp_size(ProbeMap s_map_ref,
                                     ProbeMap n_map_ref,
@@ -174,10 +225,13 @@ int main(int argc, const char** argv)
   int32_t *s_nationkey, *d_s_nationkey;
   int32_t *ps_suppkey, *d_ps_suppkey;
   n_nationkey   = read_column_typecasted<int32_t>(nation_table, "n_nationkey");
+  std::cout << "Read nationkey\n";
   s_supplierkey = read_column_typecasted<int32_t>(supplier_table, "s_suppkey");
+  std::cout << "Read nationkey\n";
   s_nationkey   = read_column_typecasted<int32_t>(supplier_table, "s_nationkey");
+  std::cout << "Read nationkey\n";
   ps_suppkey    = read_column_typecasted<int32_t>(partsupp_table, "ps_suppkey");
-
+  std::cout << "Read nationkey\n";
   cudaMalloc(&d_n_nationkey, nation_size * sizeof(int32_t));
   cudaMalloc(&d_s_supplierkey, supplier_size * sizeof(int32_t));
   cudaMalloc(&d_s_nationkey, supplier_size * sizeof(int32_t));
@@ -218,19 +272,81 @@ int main(int argc, const char** argv)
                                                               d_n_s_ps_join,
                                                               d_join_size,
                                                               partsupp_size);
+
   n_s_ps_join = (multijoin_t*)malloc(sizeof(multijoin_t)*join_size);
   cudaMemcpy(n_s_ps_join, d_n_s_ps_join, sizeof(multijoin_t)*join_size, cudaMemcpyDeviceToHost);
 
-  for (size_t i=0; i<join_size; i++) {
-    auto n_idx = n_s_ps_join[i].n_idx;
-    auto s_idx = n_s_ps_join[i].s_idx;
-    auto ps_idx = n_s_ps_join[i].ps_idx;
-    std::cout << n_nationkey[n_idx] << " " << s_nationkey[s_idx] << " " << s_supplierkey[s_idx] << " " << 
-      ps_suppkey[ps_idx] << "\n";
-  }
+  // for (size_t i=0; i<join_size; i++) {
+  //   auto n_idx = n_s_ps_join[i].n_idx;
+  //   auto s_idx = n_s_ps_join[i].s_idx;
+  //   auto ps_idx = n_s_ps_join[i].ps_idx;
+  //   std::cout << n_nationkey[n_idx] << " " << s_nationkey[s_idx] << " " << s_supplierkey[s_idx] << " " << 
+  //     ps_suppkey[ps_idx] << "\n";
+  // }
 
-  std::cout << "nationkey size: " << n_nationkey_map.size() << "\n";
-  std::cout << "supplierkey size: " << s_supplierkey_map.size() << "\n";
-  std::cout << "nation, supplier, partsupplier sizes: " << nation_size << " " << supplier_size << " " << partsupp_size << "\n";
-  std::cout << "supplier, nation and partsupplier join size: " << join_size << "\n";
+  auto p_partkey_map = cuco::static_map {
+    part_size*2, cuco::empty_key{(int32_t)-1},
+    cuco::empty_value{(int32_t)-1},
+    thrust::equal_to<int32_t>{},
+    cuco::linear_probing<TILE_SIZE, cuco::default_hash_function<int32_t>>()
+  };
+  auto o_orderkey_map = cuco::static_map {
+    orders_size*2, cuco::empty_key{(int32_t)-1},
+    cuco::empty_value{(int32_t)-1},
+    thrust::equal_to<int32_t>{},
+    cuco::linear_probing<TILE_SIZE, cuco::default_hash_function<int32_t>>()
+  };
+  int32_t *p_partkey, *d_p_partkey; // build hash on this
+  int32_t *o_orderkey, *d_o_orderkey; // build hash on this
+  int32_t *l_partkey, *d_l_partkey;
+  int32_t *l_orderkey, *d_l_orderkey;
+
+  p_partkey = read_column_typecasted<int32_t>(part_table, "p_partkey");
+  o_orderkey = read_column_typecasted<int32_t>(orders_table, "o_orderkey");
+  l_partkey = read_column_typecasted<int32_t>(lineitem_table, "l_partkey");
+  l_orderkey = read_column_typecasted<int32_t>(lineitem_table, "l_orderkey");
+
+  cudaMalloc(&d_p_partkey, sizeof(int32_t)*part_size);
+  cudaMalloc(&d_o_orderkey, sizeof(int32_t)*orders_size);
+  cudaMalloc(&d_l_partkey, sizeof(int32_t)*lineitem_size);
+  cudaMalloc(&d_l_orderkey, sizeof(int32_t)*lineitem_size);
+
+  cudaMemcpy(d_p_partkey, p_partkey, sizeof(int32_t)*part_size, cudaMemcpyHostToDevice);
+  cudaMemcpy(d_o_orderkey, o_orderkey, sizeof(int32_t)*orders_size, cudaMemcpyHostToDevice);
+  cudaMemcpy(d_l_partkey, l_partkey, sizeof(int32_t)*lineitem_size, cudaMemcpyHostToDevice);
+  cudaMemcpy(d_l_orderkey, l_orderkey, sizeof(int32_t)*lineitem_size, cudaMemcpyHostToDevice);
+
+  build_hash_primary_key<<<getGridSize(part_size, TB), TB>>>(p_partkey_map.ref(cuco::insert), d_p_partkey, part_size);
+  CUDACHKERR();
+  build_hash_primary_key<<<getGridSize(orders_size, TB), TB>>>(o_orderkey_map.ref(cuco::insert), d_o_orderkey, orders_size);
+  CUDACHKERR();
+  // cudaMemset(d_join_size, 0, sizeof(int32_t));
+  CUDACHKERR();
+  probe_lineitem_size<<<getGridSize(lineitem_size, TB), TB>>>(
+    p_partkey_map.ref(cuco::find),
+    o_orderkey_map.ref(cuco::find),
+    d_p_partkey, d_l_partkey,
+    d_o_orderkey, d_l_orderkey,
+    d_join_size, lineitem_size
+  );
+  multijoin_t_pol *d_p_o_l_join;
+  cudaMemcpy(&join_size, d_join_size, sizeof(int32_t), cudaMemcpyDeviceToHost);
+  cudaMemset(d_join_size, 0, sizeof(int32_t));
+  cudaMalloc(&d_p_o_l_join, sizeof(multijoin_t_pol)*join_size);
+  probe_lineitem<<<getGridSize(lineitem_size, TB), TB>>> (
+    p_partkey_map.ref(cuco::find),
+    o_orderkey_map.ref(cuco::find),
+    d_p_partkey, d_l_partkey,
+    d_o_orderkey, d_l_orderkey,
+    d_join_size, lineitem_size, d_p_o_l_join
+  );
+
+  multijoin_t_pol *pol_join = (multijoin_t_pol*)malloc(sizeof(multijoin_t_pol)*join_size);
+  cudaMemcpy(pol_join, d_p_o_l_join, sizeof(multijoin_t_pol)*join_size, cudaMemcpyDeviceToHost);
+  for (size_t i=0; i<join_size; i++ ){
+    std::cout << p_partkey[pol_join[i].p_idx] << " "
+              << o_orderkey[pol_join[i].o_idx] << " "
+              << l_orderkey[pol_join[i].l_idx] << " "
+              << l_partkey[pol_join[i].l_idx] << "\n";
+  }
 }

@@ -60,6 +60,7 @@ T* read_column(std::shared_ptr<arrow::Table>& table, const std::string& column)
 template <typename T>
 T* read_column_typecasted(std::shared_ptr<arrow::Table>& table, const std::string& column)
 {
+  std::cout << "reading " << column << "\n";
   T* carr        = (T*)malloc(sizeof(T) * table->num_rows());
   auto arrow_col = table->GetColumnByName(column);
   for (auto chunk : arrow_col->chunks()) {
@@ -162,6 +163,7 @@ int getGridSize(size_t column_size, int thread_block_size)
 
 std::shared_ptr<arrow::Table> getArrowTable(std::string path_to_file)
 {
+  std::cout << "Getting arrow table\t:" << path_to_file << std::endl;
   std::shared_ptr<arrow::Table> lineitem_table;
   arrow::Status st = read_parquet(path_to_file, lineitem_table);
   if (st != arrow::Status::OK()) {
