@@ -69,6 +69,7 @@ ConfigureBench(STATIC_MAP_BENCH
 # - static_multiset benchmarks --------------------------------------------------------------------
 ConfigureBench(STATIC_MULTISET_BENCH
   static_multiset/contains_bench.cu
+  static_multiset/retrieve_bench.cu
   static_multiset/count_bench.cu
   static_multiset/find_bench.cu
   static_multiset/insert_bench.cu)
@@ -95,6 +96,12 @@ ConfigureBench(HASH_FUNCTION_BENCH
   hash_function/hash_function_bench.cu)
 
 ###################################################################################################
-# - distinct_count_estimator benchmarks -----------------------------------------------------------
-ConfigureBench(DISTINCT_COUNT_ESTIMATOR_BENCH
-  distinct_count_estimator/distinct_count_estimator_bench.cu)
+# - hyperloglog benchmarks -----------------------------------------------------------
+ConfigureBench(HYPERLOGLOG_BENCH
+  hyperloglog/hyperloglog_bench.cu)
+
+###################################################################################################
+# - bloom_filter benchmarks -----------------------------------------------------------------------
+ConfigureBench(BLOOM_FILTER_BENCH
+  bloom_filter/add_bench.cu
+  bloom_filter/contains_bench.cu)
