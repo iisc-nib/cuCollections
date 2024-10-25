@@ -11,7 +11,7 @@
 
 struct StringColumn {
   int* sizes;
-  char** stringAddresses;
+  int* offsets;
   char* data;
   StringColumn() {}
 };
@@ -56,6 +56,7 @@ T* read_column(std::shared_ptr<arrow::Table>& table, const std::string& column)
   }
   return carr;
 }
+
 
 template <typename T>
 T* read_column_typecasted(std::shared_ptr<arrow::Table>& table, const std::string& column)
@@ -113,15 +114,20 @@ StringColumn* read_string_column(std::shared_ptr<arrow::Table>& table, const std
 
   // calculate the size of data
   result->sizes           = (int*)malloc(sizeof(int) * table->num_rows());
-  result->stringAddresses = (char**)malloc(sizeof(char*) * table->num_rows());
+  result->offsets = (int*)malloc(sizeof(int*) * table->num_rows());
   int data_size           = 0;
   int j                   = 0;
+  if (table->num_rows() > 0)
+    result->offsets[0] = 0;
   for (auto chunk : arrow_col->chunks()) {
     auto string_arr = std::static_pointer_cast<arrow::LargeStringArray>(chunk);
     for (int i = 0; i < string_arr->length(); i++) {
       auto str = string_arr->GetString(i);
       data_size += str.size();
       result->sizes[j++] = str.size();
+      if (j > 0) {
+        result->offsets[j] = result->offsets[j-1] + result->sizes[j-1];
+      }
     }
   }
   result->data  = (char*)malloc(sizeof(char) * data_size);
@@ -131,7 +137,6 @@ StringColumn* read_string_column(std::shared_ptr<arrow::Table>& table, const std
     auto string_arr = std::static_pointer_cast<arrow::LargeStringArray>(chunk);
     for (int i = 0; i < string_arr->length(); i++) {
       auto str                   = string_arr->GetString(i);
-      result->stringAddresses[i] = straddr;
       straddr += str.size();
       for (auto c : str) {
         result->data[j++] = c;
