@@ -16,8 +16,8 @@
 
 #include <test_utils.hpp>
 
-#include <cuco/distinct_count_estimator.cuh>
 #include <cuco/hash_functions.cuh>
+#include <cuco/hyperloglog.cuh>
 
 #include <thrust/device_vector.h>
 #include <thrust/sequence.h>
@@ -29,7 +29,7 @@
 #include <cstddef>
 #include <cstdint>
 
-TEMPLATE_TEST_CASE_SIG("distinct_count_estimator: unique sequence",
+TEMPLATE_TEST_CASE_SIG("hyperloglog: unique sequence",
                        "",
                        ((typename T, typename Hash), T, Hash),
                        (int32_t, cuco::xxhash_64<int32_t>),
@@ -56,7 +56,7 @@ TEMPLATE_TEST_CASE_SIG("distinct_count_estimator: unique sequence",
   thrust::sequence(items.begin(), items.end(), 0);
 
   // Initialize the estimator
-  cuco::distinct_count_estimator<T, cuda::thread_scope_device, Hash> estimator{
+  cuco::hyperloglog<T, cuda::thread_scope_device, Hash> estimator{
     cuco::sketch_size_kb(sketch_size_kb)};
 
   REQUIRE(estimator.estimate() == 0);

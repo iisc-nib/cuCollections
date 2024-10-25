@@ -251,30 +251,16 @@ template <typename Key,
           typename StorageRef,
           typename... Operators>
 template <typename... NewOperators>
-auto static_multiset_ref<Key, Scope, KeyEqual, ProbingScheme, StorageRef, Operators...>::with(
-  NewOperators...) && noexcept
-{
-  return static_multiset_ref<Key, Scope, KeyEqual, ProbingScheme, StorageRef, NewOperators...>{
-    std::move(*this)};
-}
-
-template <typename Key,
-          cuda::thread_scope Scope,
-          typename KeyEqual,
-          typename ProbingScheme,
-          typename StorageRef,
-          typename... Operators>
-template <typename... NewOperators>
 __host__ __device__ constexpr auto
-static_multiset_ref<Key, Scope, KeyEqual, ProbingScheme, StorageRef, Operators...>::with_operators(
-  NewOperators...) const noexcept
+static_multiset_ref<Key, Scope, KeyEqual, ProbingScheme, StorageRef, Operators...>::
+  rebind_operators(NewOperators...) const noexcept
 {
   return static_multiset_ref<Key, Scope, KeyEqual, ProbingScheme, StorageRef, NewOperators...>{
     cuco::empty_key<Key>{this->empty_key_sentinel()},
     this->key_eq(),
-    this->impl_.probing_scheme(),
+    this->probing_scheme(),
     {},
-    this->impl_.storage_ref()};
+    this->storage_ref()};
 }
 
 template <typename Key,
@@ -285,15 +271,15 @@ template <typename Key,
           typename... Operators>
 template <typename NewKeyEqual>
 __host__ __device__ constexpr auto
-static_multiset_ref<Key, Scope, KeyEqual, ProbingScheme, StorageRef, Operators...>::with_key_eq(
+static_multiset_ref<Key, Scope, KeyEqual, ProbingScheme, StorageRef, Operators...>::rebind_key_eq(
   NewKeyEqual const& key_equal) const noexcept
 {
   return static_multiset_ref<Key, Scope, NewKeyEqual, ProbingScheme, StorageRef, Operators...>{
     cuco::empty_key<Key>{this->empty_key_sentinel()},
     key_equal,
-    this->impl_.probing_scheme(),
+    this->probing_scheme(),
     {},
-    this->impl_.storage_ref()};
+    this->storage_ref()};
 }
 
 template <typename Key,
@@ -305,19 +291,19 @@ template <typename Key,
 template <typename NewHash>
 __host__ __device__ constexpr auto
 static_multiset_ref<Key, Scope, KeyEqual, ProbingScheme, StorageRef, Operators...>::
-  with_hash_function(NewHash const& hash) const
+  rebind_hash_function(NewHash const& hash) const
 {
-  auto const probing_scheme = this->impl_.probing_scheme().with_hash_function(hash);
+  auto const probing_scheme = this->probing_scheme().rebind_hash_function(hash);
   return static_multiset_ref<Key,
                              Scope,
                              KeyEqual,
                              cuda::std::decay_t<decltype(probing_scheme)>,
                              StorageRef,
                              Operators...>{cuco::empty_key<Key>{this->empty_key_sentinel()},
-                                           this->impl_.key_eq(),
+                                           this->key_eq(),
                                            probing_scheme,
                                            {},
-                                           this->impl_.storage_ref()};
+                                           this->storage_ref()};
 }
 
 namespace detail {
@@ -490,6 +476,123 @@ class operator_impl<
   {
     auto const& ref_ = static_cast<ref_type const&>(*this);
     return ref_.impl_.find(group, key);
+  }
+};
+
+template <typename Key,
+          cuda::thread_scope Scope,
+          typename KeyEqual,
+          typename ProbingScheme,
+          typename StorageRef,
+          typename... Operators>
+class operator_impl<
+  op::retrieve_tag,
+  static_multiset_ref<Key, Scope, KeyEqual, ProbingScheme, StorageRef, Operators...>> {
+  using base_type = static_multiset_ref<Key, Scope, KeyEqual, ProbingScheme, StorageRef>;
+  using ref_type =
+    static_multiset_ref<Key, Scope, KeyEqual, ProbingScheme, StorageRef, Operators...>;
+  using key_type       = typename base_type::key_type;
+  using value_type     = typename base_type::value_type;
+  using iterator       = typename base_type::iterator;
+  using const_iterator = typename base_type::const_iterator;
+
+  static constexpr auto cg_size     = base_type::cg_size;
+  static constexpr auto window_size = base_type::window_size;
+
+ public:
+  /**
+   * @brief Retrieves all the slots corresponding to all keys in the range `[input_probe_begin,
+   * input_probe_end)`.
+   *
+   * If key `k = *(first + i)` exists in the container, copies `k` to `output_probe` and associated
+   * slot contents to `output_match`, respectively. The output order is unspecified.
+   *
+   * Behavior is undefined if the size of the output range exceeds the number of retrieved slots.
+   * Use `count()` to determine the size of the output range.
+   *
+   * @tparam BlockSize Size of the thread block this operation is executed in
+   * @tparam InputProbeIt Device accessible input iterator whose `value_type` is
+   * convertible to the container's `key_type`
+   * @tparam OutputProbeIt Device accessible input iterator whose `value_type` is
+   * convertible to the container's `key_type`
+   * @tparam OutputMatchIt Device accessible input iterator whose `value_type` is
+   * convertible to the container's `value_type`
+   * @tparam AtomicCounter Atomic counter type that follows the same semantics as
+   * `cuda::atomic(_ref)`
+   *
+   * @param block Thread block this operation is executed in
+   * @param input_probe_begin Beginning of the input sequence of keys
+   * @param input_probe_end End of the input sequence of keys
+   * @param output_probe Beginning of the sequence of keys corresponding to matching elements in
+   * `output_match`
+   * @param output_match Beginning of the sequence of matching elements
+   * @param atomic_counter Counter that is used to determine the next free position in the output
+   * sequences
+   */
+  template <int32_t BlockSize,
+            class InputProbeIt,
+            class OutputProbeIt,
+            class OutputMatchIt,
+            class AtomicCounter>
+  __device__ void retrieve(cooperative_groups::thread_block const& block,
+                           InputProbeIt input_probe_begin,
+                           InputProbeIt input_probe_end,
+                           OutputProbeIt output_probe,
+                           OutputMatchIt output_match,
+                           AtomicCounter& atomic_counter) const
+  {
+    auto const& ref_ = static_cast<ref_type const&>(*this);
+    ref_.impl_.retrieve<BlockSize>(
+      block, input_probe_begin, input_probe_end, output_probe, output_match, atomic_counter);
+  }
+
+  /**
+   * @brief Retrieves all the slots corresponding to all keys in the range `[input_probe_begin,
+   * input_probe_end)`.
+   *
+   * If key `k = *(first + i)` exists in the container, copies `k` to `output_probe` and associated
+   * slot contents to `output_match`, respectively. The output order is unspecified.
+   *
+   * Behavior is undefined if the size of the output range exceeds the number of retrieved slots.
+   * Use `count_outer()` to determine the size of the output range.
+   *
+   * If a key `k` has no matches in the container, then `{key, empty_slot_sentinel}` will be added
+   * to the output sequence.
+   *
+   * @tparam BlockSize Size of the thread block this operation is executed in
+   * @tparam InputProbeIt Device accessible input iterator whose `value_type` is
+   * convertible to the container's `key_type`
+   * @tparam OutputProbeIt Device accessible input iterator whose `value_type` is
+   * convertible to the container's `key_type`
+   * @tparam OutputMatchIt Device accessible input iterator whose `value_type` is
+   * convertible to the container's `value_type`
+   * @tparam AtomicCounter Atomic counter type that follows the same semantics as
+   * `cuda::atomic(_ref)`
+   *
+   * @param block Thread block this operation is executed in
+   * @param input_probe_begin Beginning of the input sequence of keys
+   * @param input_probe_end End of the input sequence of keys
+   * @param output_probe Beginning of the sequence of keys corresponding to matching elements in
+   * `output_match`
+   * @param output_match Beginning of the sequence of matching elements
+   * @param atomic_counter Counter that is used to determine the next free position in the output
+   * sequences
+   */
+  template <int32_t BlockSize,
+            class InputProbeIt,
+            class OutputProbeIt,
+            class OutputMatchIt,
+            class AtomicCounter>
+  __device__ void retrieve_outer(cooperative_groups::thread_block const& block,
+                                 InputProbeIt input_probe_begin,
+                                 InputProbeIt input_probe_end,
+                                 OutputProbeIt output_probe,
+                                 OutputMatchIt output_match,
+                                 AtomicCounter& atomic_counter) const
+  {
+    auto const& ref_ = static_cast<ref_type const&>(*this);
+    ref_.impl_.retrieve_outer<BlockSize>(
+      block, input_probe_begin, input_probe_end, output_probe, output_match, atomic_counter);
   }
 };
 

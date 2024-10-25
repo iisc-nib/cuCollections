@@ -104,7 +104,9 @@ ConfigureTest(STATIC_MULTISET_TEST
     static_multiset/custom_count_test.cu
     static_multiset/find_test.cu
     static_multiset/insert_test.cu
-    static_multiset/for_each_test.cu)
+    static_multiset/for_each_test.cu
+    static_multiset/retrieve_test.cu
+    static_multiset/large_input_test.cu)
 
 ###################################################################################################
 # - static_multimap tests -------------------------------------------------------------------------
@@ -117,7 +119,8 @@ ConfigureTest(STATIC_MULTIMAP_TEST
     static_multimap/insert_if_test.cu
     static_multimap/multiplicity_test.cu
     static_multimap/non_match_test.cu
-    static_multimap/pair_function_test.cu)
+    static_multimap/pair_function_test.cu
+    static_multimap/for_each_test.cu)
 
 ###################################################################################################
 # - dynamic_bitset tests --------------------------------------------------------------------------
@@ -129,8 +132,13 @@ ConfigureTest(DYNAMIC_BITSET_TEST
     dynamic_bitset/size_test.cu)
 
 ###################################################################################################
-# - distinct_count_estimator ----------------------------------------------------------------------
-ConfigureTest(DISTINCT_COUNT_ESTIMATOR_TEST
-    distinct_count_estimator/unique_sequence_test.cu
-    distinct_count_estimator/spark_parity_test.cu
-    distinct_count_estimator/device_ref_test.cu)
+# - hyperloglog ----------------------------------------------------------------------
+ConfigureTest(HYPERLOGLOG_TEST
+    hyperloglog/unique_sequence_test.cu
+    hyperloglog/spark_parity_test.cu
+    hyperloglog/device_ref_test.cu)
+
+###################################################################################################
+# - bloom_filter ----------------------------------------------------------------------------------
+ConfigureTest(BLOOM_FILTER_TEST
+    bloom_filter/unique_sequence_test.cu)

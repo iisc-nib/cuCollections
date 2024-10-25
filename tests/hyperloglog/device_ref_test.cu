@@ -16,9 +16,10 @@
 
 #include <test_utils.hpp>
 
-#include <cuco/distinct_count_estimator.cuh>
 #include <cuco/hash_functions.cuh>
+#include <cuco/hyperloglog.cuh>
 
+#include <cuda/std/cstddef>
 #include <thrust/device_vector.h>
 #include <thrust/sequence.h>
 
@@ -26,7 +27,6 @@
 #include <catch2/generators/catch_generators.hpp>
 
 #include <cmath>
-#include <cstddef>
 #include <cstdint>
 
 template <typename Ref, typename InputIt, typename OutputIt>
@@ -35,7 +35,7 @@ __global__ void estimate_kernel(cuco::sketch_size_kb sketch_size_kb,
                                 size_t n,
                                 OutputIt out)
 {
-  extern __shared__ std::byte local_sketch[];
+  extern __shared__ cuda::std::byte local_sketch[];
 
   auto const block = cooperative_groups::this_thread_block();
 
@@ -55,14 +55,14 @@ __global__ void estimate_kernel(cuco::sketch_size_kb sketch_size_kb,
   }
 }
 
-TEMPLATE_TEST_CASE_SIG("distinct_count_estimator: device ref",
+TEMPLATE_TEST_CASE_SIG("hyperloglog: device ref",
                        "",
                        ((typename T, typename Hash), T, Hash),
                        (int32_t, cuco::xxhash_64<int32_t>),
                        (int64_t, cuco::xxhash_64<int64_t>),
                        (__int128_t, cuco::xxhash_64<__int128_t>))
 {
-  using estimator_type = cuco::distinct_count_estimator<T, cuda::thread_scope_device, Hash>;
+  using estimator_type = cuco::hyperloglog<T, cuda::thread_scope_device, Hash>;
 
   auto num_items_pow2 = GENERATE(25, 26, 28);
   auto hll_precision  = GENERATE(8, 10, 12, 13);

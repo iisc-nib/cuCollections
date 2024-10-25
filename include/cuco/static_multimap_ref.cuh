@@ -226,39 +226,42 @@ class static_multimap_ref
   [[nodiscard]] __host__ __device__ constexpr auto probing_scheme() const noexcept;
 
   /**
-   * @brief Creates a reference with new operators from the current object.
-   *
-   * @deprecated This function is deprecated. Use the new `with_operators` instead.
-   *
-   * Note that this function uses move semantics and thus invalidates the current object.
-   *
-   * @warning Using two or more reference objects to the same container but with
-   * a different operator set at the same time results in undefined behavior.
+   * @brief Creates a copy of the current non-owning reference using the given operators
    *
    * @tparam NewOperators List of `cuco::op::*_tag` types
    *
-   * @param ops List of operators, e.g., `cuco::insert`
+   * @param ops List of operators, e.g., `cuco::op::insert`
    *
-   * @return `*this` with `NewOperators...`
+   * @return Copy of the current device ref
    */
   template <typename... NewOperators>
-  [[nodiscard]] __host__ __device__ auto with(NewOperators... ops) && noexcept;
+  [[nodiscard]] __host__ __device__ constexpr auto rebind_operators(
+    NewOperators... ops) const noexcept;
 
   /**
-   * @brief Creates a reference with new operators from the current object
+   * @brief Makes a copy of the current device reference with the given key comparator
    *
-   * @warning Using two or more reference objects to the same container but with
-   * a different operator set at the same time results in undefined behavior.
+   * @tparam NewKeyEqual The new key equal type
    *
-   * @tparam NewOperators List of `cuco::op::*_tag` types
+   * @param key_equal New key comparator
    *
-   * @param ops List of operators, e.g., `cuco::insert`
-   *
-   * @return `*this` with `NewOperators...`
+   * @return Copy of the current device ref
    */
-  template <typename... NewOperators>
-  [[nodiscard]] __host__ __device__ constexpr auto with_operators(
-    NewOperators... ops) const noexcept;
+  template <typename NewKeyEqual>
+  [[nodiscard]] __host__ __device__ constexpr auto rebind_key_eq(
+    NewKeyEqual const& key_equal) const noexcept;
+
+  /**
+   * @brief Makes a copy of the current device reference with the given hasher
+   *
+   * @tparam NewHash The new hasher type
+   *
+   * @param hash New hasher
+   *
+   * @return Copy of the current device ref
+   */
+  template <typename NewHash>
+  [[nodiscard]] __host__ __device__ constexpr auto rebind_hash_function(NewHash const& hash) const;
 
   /**
    * @brief Makes a copy of the current device reference using non-owned memory
