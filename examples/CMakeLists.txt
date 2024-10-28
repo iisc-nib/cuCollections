@@ -96,5 +96,6 @@ endfunction(ConfigureExample)
 # ConfigureExample(TPCH_Q1 "${CMAKE_CURRENT_SOURCE_DIR}/tpch/q1.cu") 
 # ConfigureExample(TPCH_Q3 "${CMAKE_CURRENT_SOURCE_DIR}/tpch/q3.cu") 
 # ConfigureExample(TPCH_Q6 "${CMAKE_CURRENT_SOURCE_DIR}/tpch/q6.cu") 
-ConfigureExample(TPCH_Q9 "${CMAKE_CURRENT_SOURCE_DIR}/tpch/q9.cu") 
+# ConfigureExample(TPCH_Q9 "${CMAKE_CURRENT_SOURCE_DIR}/tpch/q9.cu") 
+ConfigureExample(TPCH_Q18 "${CMAKE_CURRENT_SOURCE_DIR}/tpch/q18.cu") 
 
