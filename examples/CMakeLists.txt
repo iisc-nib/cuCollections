@@ -98,4 +98,5 @@ endfunction(ConfigureExample)
 # ConfigureExample(TPCH_Q6 "${CMAKE_CURRENT_SOURCE_DIR}/tpch/q6.cu") 
 # ConfigureExample(TPCH_Q9 "${CMAKE_CURRENT_SOURCE_DIR}/tpch/q9.cu") 
 ConfigureExample(TPCH_Q18 "${CMAKE_CURRENT_SOURCE_DIR}/tpch/q18.cu") 
+ConfigureExample(TPCH_Q1_TILED "${CMAKE_CURRENT_SOURCE_DIR}/tpch-crystal/q1.cu") 
 
