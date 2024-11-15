@@ -1,11 +1,7 @@
 #include <iostream>
 #include "utils.h"
 
-template<typename T>
-void allocate_to_device(T* &device_mem, T* &host_mem, size_t elements) {
-  cudaMalloc(&device_mem, elements*sizeof(T));
-  cudaMemcpy(device_mem, host_mem, elements*sizeof(T), cudaMemcpyHostToDevice);
-}
+
 
 #define ITEMS_PER_THREAD 8
 #define TB_SIZE 32

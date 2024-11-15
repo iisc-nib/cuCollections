@@ -19,7 +19,11 @@ struct StringDictEncodedColumn {
   std::unordered_map<std::string, int8_t> dict;
   int8_t* column;
 };
-
+template<typename T>
+void allocate_to_device(T* &device_mem, T* &host_mem, size_t elements) {
+  cudaMalloc(&device_mem, elements*sizeof(T));
+  cudaMemcpy(device_mem, host_mem, elements*sizeof(T), cudaMemcpyHostToDevice);
+}
 void CUDACHKERR()
 {
   auto err = cudaGetLastError();
