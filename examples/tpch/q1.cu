@@ -179,12 +179,12 @@ int main(int argc, const char** argv)
   auto lineitem_table  = getArrowTable(lineitem_file);
   size_t lineitem_size = lineitem_table->num_rows();
 
-  int64_t* l_quantity     = read_column<int64_t>(lineitem_table, "l_quantity");
-  int32_t* l_shipdate     = read_column<int32_t>(lineitem_table, "l_shipdate");
-  double* l_ep_test       = read_column<double>(lineitem_table, "l_extendedprice");
-  double* l_extendedprice = read_column<double>(lineitem_table, "l_extendedprice");
-  double* l_discount      = read_column<double>(lineitem_table, "l_discount");
-  double* l_tax           = read_column<double>(lineitem_table, "l_tax");
+  auto l_quantity      = read_column<int64_t>(lineitem_table, "l_quantity");
+  auto l_shipdate      = read_column<int32_t>(lineitem_table, "l_shipdate");
+  auto l_ep_test       = read_column<double>(lineitem_table, "l_extendedprice");
+  auto l_extendedprice = read_column<double>(lineitem_table, "l_extendedprice");
+  auto l_discount      = read_column<double>(lineitem_table, "l_discount");
+  auto l_tax           = read_column<double>(lineitem_table, "l_tax");
   StringDictEncodedColumn* l_returnflag =
     read_string_dict_encoded_column(lineitem_table, "l_returnflag");
   StringDictEncodedColumn* l_linestatus =
@@ -199,12 +199,14 @@ int main(int argc, const char** argv)
   cudaMemcpy(
     d_l_returnflag, l_returnflag->column, sizeof(int8_t) * lineitem_size, cudaMemcpyHostToDevice);
   cudaMalloc(&d_l_shipdate, sizeof(int32_t) * lineitem_size);
-  cudaMemcpy(d_l_shipdate, l_shipdate, sizeof(int32_t) * lineitem_size, cudaMemcpyHostToDevice);
+  cudaMemcpy(
+    d_l_shipdate, l_shipdate.data(), sizeof(int32_t) * lineitem_size, cudaMemcpyHostToDevice);
 
   // compute the sum_disc_price and sum_charge
   int64_t* d_l_quantity;
   cudaMalloc(&d_l_quantity, sizeof(int64_t) * lineitem_size);
-  cudaMemcpy(d_l_quantity, l_quantity, sizeof(int64_t) * lineitem_size, cudaMemcpyHostToDevice);
+  cudaMemcpy(
+    d_l_quantity, l_quantity.data(), sizeof(int64_t) * lineitem_size, cudaMemcpyHostToDevice);
 
   double *d_disc_price, *d_charge, *d_l_extendedprice, *d_l_discount, *d_l_tax;
   cudaMalloc(&d_disc_price, sizeof(double) * lineitem_size);
@@ -212,14 +214,17 @@ int main(int argc, const char** argv)
   cudaMalloc(&d_charge, sizeof(double) * lineitem_size);
 
   cudaMalloc(&d_l_extendedprice, sizeof(double) * lineitem_size);
-  cudaMemcpy(
-    d_l_extendedprice, l_extendedprice, sizeof(double) * lineitem_size, cudaMemcpyHostToDevice);
+  cudaMemcpy(d_l_extendedprice,
+             l_extendedprice.data(),
+             sizeof(double) * lineitem_size,
+             cudaMemcpyHostToDevice);
 
   cudaMalloc(&d_l_discount, sizeof(double) * lineitem_size);
-  cudaMemcpy(d_l_discount, l_discount, sizeof(double) * lineitem_size, cudaMemcpyHostToDevice);
+  cudaMemcpy(
+    d_l_discount, l_discount.data(), sizeof(double) * lineitem_size, cudaMemcpyHostToDevice);
 
   cudaMalloc(&d_l_tax, sizeof(double) * lineitem_size);
-  cudaMemcpy(d_l_tax, l_tax, sizeof(double) * lineitem_size, cudaMemcpyHostToDevice);
+  cudaMemcpy(d_l_tax, l_tax.data(), sizeof(double) * lineitem_size, cudaMemcpyHostToDevice);
 
   // Launch kernel to compute the above 2 float arrays
   size_t TB = 32;

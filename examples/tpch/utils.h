@@ -8,6 +8,7 @@
 
 #include <iostream>
 #include <unordered_map>
+#include <vector>
 
 struct StringColumn {
   int* sizes;
@@ -21,11 +22,12 @@ struct StringDictEncodedColumn {
 };
 
 template <typename T>
-T* read_column(std::shared_ptr<arrow::Table>& table, const std::string& column)
+std::vector<T> read_column(std::shared_ptr<arrow::Table>& table, const std::string& columnName)
 {
   // TODO: add error handling for column not present in the schema
-  T* carr        = (T*)malloc(sizeof(T) * table->num_rows());
-  auto arrow_col = table->GetColumnByName(column);
+  std::vector<T> column(table->num_rows());
+  T* carr        = (T*)column.data();
+  auto arrow_col = table->GetColumnByName(columnName);
   for (auto chunk : arrow_col->chunks()) {
     if (std::is_same<T, int64_t>::value) {
       auto intArr = std::static_pointer_cast<arrow::Int64Array>(chunk);
@@ -54,15 +56,16 @@ T* read_column(std::shared_ptr<arrow::Table>& table, const std::string& column)
       }
     }
   }
-  return carr;
+  return column;
 }
 
-
 template <typename T>
-T* read_column_typecasted(std::shared_ptr<arrow::Table>& table, const std::string& column)
+std::vector<T> read_column_typecasted(std::shared_ptr<arrow::Table>& table,
+                                      const std::string& columnName)
 {
-  T* carr        = (T*)malloc(sizeof(T) * table->num_rows());
-  auto arrow_col = table->GetColumnByName(column);
+  std::vector<T> column(table->num_rows());
+  T* carr        = (T*)column.data();
+  auto arrow_col = table->GetColumnByName(columnName);
   for (auto chunk : arrow_col->chunks()) {
     if (std::is_same<T, int32_t>::value || std::is_same<T, int16_t>::value) {
       auto arr = std::static_pointer_cast<arrow::Int64Array>(chunk);
@@ -76,7 +79,7 @@ T* read_column_typecasted(std::shared_ptr<arrow::Table>& table, const std::strin
       }
     }
   }
-  return carr;
+  return column;
 }
 
 StringDictEncodedColumn* read_string_dict_encoded_column(std::shared_ptr<arrow::Table>& table,
@@ -113,21 +116,18 @@ StringColumn* read_string_column(std::shared_ptr<arrow::Table>& table, const std
   StringColumn* result = new StringColumn();
 
   // calculate the size of data
-  result->sizes           = (int*)malloc(sizeof(int) * table->num_rows());
+  result->sizes   = (int*)malloc(sizeof(int) * table->num_rows());
   result->offsets = (int*)malloc(sizeof(int*) * table->num_rows());
-  int data_size           = 0;
-  int j                   = 0;
-  if (table->num_rows() > 0)
-    result->offsets[0] = 0;
+  int data_size   = 0;
+  int j           = 0;
+  if (table->num_rows() > 0) result->offsets[0] = 0;
   for (auto chunk : arrow_col->chunks()) {
     auto string_arr = std::static_pointer_cast<arrow::LargeStringArray>(chunk);
     for (int i = 0; i < string_arr->length(); i++) {
       auto str = string_arr->GetString(i);
       data_size += str.size();
       result->sizes[j++] = str.size();
-      if (j > 0) {
-        result->offsets[j] = result->offsets[j-1] + result->sizes[j-1];
-      }
+      if (j > 0) { result->offsets[j] = result->offsets[j - 1] + result->sizes[j - 1]; }
     }
   }
   result->data  = (char*)malloc(sizeof(char) * data_size);
@@ -136,7 +136,7 @@ StringColumn* read_string_column(std::shared_ptr<arrow::Table>& table, const std
   for (auto chunk : arrow_col->chunks()) {
     auto string_arr = std::static_pointer_cast<arrow::LargeStringArray>(chunk);
     for (int i = 0; i < string_arr->length(); i++) {
-      auto str                   = string_arr->GetString(i);
+      auto str = string_arr->GetString(i);
       straddr += str.size();
       for (auto c : str) {
         result->data[j++] = c;

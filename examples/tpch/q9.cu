@@ -80,19 +80,18 @@ __global__ void build_hash_primary_key(Map map_ref, int32_t* nationkey, size_t n
 
 template <typename Map>
 __global__ void build_hash_primary_key_partname_filter(
-  Map map_ref, int32_t* keycol, size_t size,
-  char* data, int32_t* offsets, int32_t* sizes
-  )
+  Map map_ref, int32_t* keycol, size_t size, char* data, int32_t* offsets, int32_t* sizes)
 {
   int32_t tid = threadIdx.x + blockIdx.x * blockDim.x;
   if (tid >= size) return;
   // filter predicate like '%green%'
-  char* pattern = "green"; int32_t p_size = 5;
-  bool filter = false;
-  for (int i=0; i<sizes[tid]-p_size+1; i++) {
+  char* pattern  = "green";
+  int32_t p_size = 5;
+  bool filter    = false;
+  for (int i = 0; i < sizes[tid] - p_size + 1; i++) {
     bool match = true;
-    for (int j=0; j<p_size; j++) {
-      if (pattern[j]!=data[offsets[tid] + i + j]) {
+    for (int j = 0; j < p_size; j++) {
+      if (pattern[j] != data[offsets[tid] + i + j]) {
         match = false;
         break;
       }
@@ -106,7 +105,6 @@ __global__ void build_hash_primary_key_partname_filter(
   auto this_thread = cg::tiled_partition<TILE_SIZE>(cg::this_thread_block());
   map_ref.insert(this_thread, cuco::pair{keycol[tid], tid});
 }
-
 
 struct multijoin_t {
   int32_t n_idx;
@@ -219,11 +217,11 @@ __global__ void probe_partsupp(ProbeMap s_map_ref,
 
 template <class Ref>
 __global__ void for_each_probe_size(Ref ref,
-                               multijoin_t* n_s_ps,
-                               int32_t* s_suppkey,
-                               int32_t* ps_partkey,
-                               int32_t* res_idx,
-                               size_t sz)
+                                    multijoin_t* n_s_ps,
+                                    int32_t* s_suppkey,
+                                    int32_t* ps_partkey,
+                                    int32_t* res_idx,
+                                    size_t sz)
 {
   int32_t tid = (threadIdx.x + blockIdx.x * blockDim.x);
   if (tid >= sz) return;
@@ -234,7 +232,6 @@ __global__ void for_each_probe_size(Ref ref,
     atomicAdd(res_idx, 1);
   });
 }
-
 
 template <class Ref, typename AggMap>
 __global__ void for_each_probe(Ref ref,
@@ -258,42 +255,48 @@ __global__ void for_each_probe(Ref ref,
   key |= ((int64_t)ps_partkey[n_s_ps[tid].ps_idx]);
   ref.for_each(key, [&] __device__(auto const slot) {
     auto const [slot_key, slot_value] = slot;
-    auto pol_idx  = (int32_t)slot_value;
-    auto nsps_idx = tid;
+    auto pol_idx                      = (int32_t)slot_value;
+    auto nsps_idx                     = tid;
 
-    auto l_idx = pol_join[pol_idx].l_idx;
-    auto o_idx = pol_join[pol_idx].o_idx;
+    auto l_idx  = pol_join[pol_idx].l_idx;
+    auto o_idx  = pol_join[pol_idx].o_idx;
     auto ps_idx = nsps_join[nsps_idx].ps_idx;
-    auto n_idx = nsps_join[nsps_idx].n_idx;
+    auto n_idx  = nsps_join[nsps_idx].n_idx;
 
     int8_t nation_name = n_name[n_idx];
-    int32_t date = o_orderdate[o_idx];
-    int32_t year = 1998;
-    if (date < 8035) year = 1991;
-    else if (date < 8401) year = 1992;
-    else if (date < 8766) year = 1993;
-    else if (date < 9131) year = 1994;
-    else if (date < 9496) year = 1995;
-    else if (date < 9862) year = 1996;
-    else if (date < 10227) year = 1997;
+    int32_t date       = o_orderdate[o_idx];
+    int32_t year       = 1998;
+    if (date < 8035)
+      year = 1991;
+    else if (date < 8401)
+      year = 1992;
+    else if (date < 8766)
+      year = 1993;
+    else if (date < 9131)
+      year = 1994;
+    else if (date < 9496)
+      year = 1995;
+    else if (date < 9862)
+      year = 1996;
+    else if (date < 10227)
+      year = 1997;
     int64_t gb_k = nation_name;
     gb_k <<= 32;
     gb_k |= year;
-    
-    double amount = l_extendedprice[l_idx]*(1 - l_discount[l_idx]) - (ps_supplycost[ps_idx] * l_quantity[l_idx]);
+
+    double amount = l_extendedprice[l_idx] * (1 - l_discount[l_idx]) -
+                    (ps_supplycost[ps_idx] * l_quantity[l_idx]);
     // printf("%d \n",year);
     if (amount == 0) return;
 
     auto [gb_slot, is_new_key] = agg_map.insert_and_find(cuco::pair{gb_k, amount});
     if (!is_new_key) {
-      auto ref = 
-       cuda::atomic_ref<typename AggMap::mapped_type, cuda::thread_scope_device>{gb_slot->second};
+      auto ref =
+        cuda::atomic_ref<typename AggMap::mapped_type, cuda::thread_scope_device>{gb_slot->second};
       ref.fetch_add(amount, cuda::memory_order_relaxed);
     }
   });
 }
-
-
 
 int main(int argc, const char** argv)
 {
@@ -337,29 +340,33 @@ int main(int argc, const char** argv)
                      thrust::equal_to<int32_t>{},
                      cuco::linear_probing<TILE_SIZE, cuco::default_hash_function<int32_t>>()};
   int TB = 1024;
-  int32_t *n_nationkey, *d_n_nationkey;
-  int32_t *s_supplierkey, *d_s_supplierkey;
-  int32_t *s_nationkey, *d_s_nationkey;
-  int32_t *ps_suppkey, *d_ps_suppkey;
-  int32_t *ps_partkey, *d_ps_partkey;
+  int32_t* d_n_nationkey;
+  int32_t* d_s_supplierkey;
+  int32_t* d_s_nationkey;
+  int32_t* d_ps_suppkey;
+  int32_t* d_ps_partkey;
   StringColumn* p_name;
-  n_nationkey   = read_column_typecasted<int32_t>(nation_table, "n_nationkey");
-  s_supplierkey = read_column_typecasted<int32_t>(supplier_table, "s_suppkey");
-  s_nationkey   = read_column_typecasted<int32_t>(supplier_table, "s_nationkey");
-  ps_suppkey    = read_column_typecasted<int32_t>(partsupp_table, "ps_suppkey");
-  ps_partkey    = read_column_typecasted<int32_t>(partsupp_table, "ps_partkey");
-  p_name = read_string_column(part_table, "p_name");
+  auto n_nationkey   = read_column_typecasted<int32_t>(nation_table, "n_nationkey");
+  auto s_supplierkey = read_column_typecasted<int32_t>(supplier_table, "s_suppkey");
+  auto s_nationkey   = read_column_typecasted<int32_t>(supplier_table, "s_nationkey");
+  auto ps_suppkey    = read_column_typecasted<int32_t>(partsupp_table, "ps_suppkey");
+  auto ps_partkey    = read_column_typecasted<int32_t>(partsupp_table, "ps_partkey");
+  p_name             = read_string_column(part_table, "p_name");
   cudaMalloc(&d_n_nationkey, nation_size * sizeof(int32_t));
   cudaMalloc(&d_s_supplierkey, supplier_size * sizeof(int32_t));
   cudaMalloc(&d_s_nationkey, supplier_size * sizeof(int32_t));
   cudaMalloc(&d_ps_suppkey, partsupp_size * sizeof(int32_t));
   cudaMalloc(&d_ps_partkey, partsupp_size * sizeof(int32_t));
-  cudaMemcpy(d_n_nationkey, n_nationkey, nation_size * sizeof(int32_t), cudaMemcpyHostToDevice);
   cudaMemcpy(
-    d_s_supplierkey, s_supplierkey, supplier_size * sizeof(int32_t), cudaMemcpyHostToDevice);
-  cudaMemcpy(d_s_nationkey, s_nationkey, supplier_size * sizeof(int32_t), cudaMemcpyHostToDevice);
-  cudaMemcpy(d_ps_suppkey, ps_suppkey, partsupp_size * sizeof(int32_t), cudaMemcpyHostToDevice);
-  cudaMemcpy(d_ps_partkey, ps_partkey, partsupp_size * sizeof(int32_t), cudaMemcpyHostToDevice);
+    d_n_nationkey, n_nationkey.data(), nation_size * sizeof(int32_t), cudaMemcpyHostToDevice);
+  cudaMemcpy(
+    d_s_supplierkey, s_supplierkey.data(), supplier_size * sizeof(int32_t), cudaMemcpyHostToDevice);
+  cudaMemcpy(
+    d_s_nationkey, s_nationkey.data(), supplier_size * sizeof(int32_t), cudaMemcpyHostToDevice);
+  cudaMemcpy(
+    d_ps_suppkey, ps_suppkey.data(), partsupp_size * sizeof(int32_t), cudaMemcpyHostToDevice);
+  cudaMemcpy(
+    d_ps_partkey, ps_partkey.data(), partsupp_size * sizeof(int32_t), cudaMemcpyHostToDevice);
 
   build_hash_primary_key<<<getGridSize(nation_size, TB), TB>>>(
     n_nationkey_map.ref(cuco::insert), d_n_nationkey, nation_size);
@@ -393,8 +400,8 @@ int main(int argc, const char** argv)
                                                          d_join_size,
                                                          partsupp_size);
 
-  n_s_ps_join = (multijoin_t*)malloc(sizeof(multijoin_t)*join_size);
-  cudaMemcpy(n_s_ps_join, d_n_s_ps_join, sizeof(multijoin_t)*join_size, cudaMemcpyDeviceToHost);
+  n_s_ps_join = (multijoin_t*)malloc(sizeof(multijoin_t) * join_size);
+  cudaMemcpy(n_s_ps_join, d_n_s_ps_join, sizeof(multijoin_t) * join_size, cudaMemcpyDeviceToHost);
 
   // for (size_t i=0; i<join_size; i++) {
   //   auto n_idx = n_s_ps_join[i].n_idx;
@@ -417,36 +424,38 @@ int main(int argc, const char** argv)
                      cuco::empty_value{(int32_t)-1},
                      thrust::equal_to<int32_t>{},
                      cuco::linear_probing<TILE_SIZE, cuco::default_hash_function<int32_t>>()};
-  int32_t *p_partkey, *d_p_partkey;    // build hash on this
-  int32_t *o_orderkey, *d_o_orderkey;  // build hash on this
-  int32_t *l_partkey, *d_l_partkey;
-  int32_t *l_orderkey, *d_l_orderkey;
+  int32_t* d_p_partkey;   // build hash on this
+  int32_t* d_o_orderkey;  // build hash on this
+  int32_t* d_l_partkey;
+  int32_t* d_l_orderkey;
 
-  p_partkey  = read_column_typecasted<int32_t>(part_table, "p_partkey");
-  o_orderkey = read_column_typecasted<int32_t>(orders_table, "o_orderkey");
-  l_partkey  = read_column_typecasted<int32_t>(lineitem_table, "l_partkey");
-  l_orderkey = read_column_typecasted<int32_t>(lineitem_table, "l_orderkey");
+  auto p_partkey  = read_column_typecasted<int32_t>(part_table, "p_partkey");
+  auto o_orderkey = read_column_typecasted<int32_t>(orders_table, "o_orderkey");
+  auto l_partkey  = read_column_typecasted<int32_t>(lineitem_table, "l_partkey");
+  auto l_orderkey = read_column_typecasted<int32_t>(lineitem_table, "l_orderkey");
 
-  char *d_char_data;
-  int32_t* d_offsets, *d_sizes;
+  char* d_char_data;
+  int32_t *d_offsets, *d_sizes;
   int tot_size = p_name->offsets[part_size - 1] + p_name->sizes[part_size - 1];
-  cudaMalloc(&d_char_data, sizeof(char)*tot_size);
-  cudaMalloc(&d_offsets, sizeof(int32_t)*part_size);
-  cudaMalloc(&d_sizes, sizeof(int32_t)*part_size);
-  cudaMemcpy(d_char_data, p_name->data, sizeof(char)*tot_size, cudaMemcpyHostToDevice);
-  cudaMemcpy(d_offsets, p_name->offsets, sizeof(int32_t)*part_size, cudaMemcpyHostToDevice);
-  cudaMemcpy(d_sizes, p_name->sizes, sizeof(int32_t)*part_size, cudaMemcpyHostToDevice);
-
+  cudaMalloc(&d_char_data, sizeof(char) * tot_size);
+  cudaMalloc(&d_offsets, sizeof(int32_t) * part_size);
+  cudaMalloc(&d_sizes, sizeof(int32_t) * part_size);
+  cudaMemcpy(d_char_data, p_name->data, sizeof(char) * tot_size, cudaMemcpyHostToDevice);
+  cudaMemcpy(d_offsets, p_name->offsets, sizeof(int32_t) * part_size, cudaMemcpyHostToDevice);
+  cudaMemcpy(d_sizes, p_name->sizes, sizeof(int32_t) * part_size, cudaMemcpyHostToDevice);
 
   cudaMalloc(&d_p_partkey, sizeof(int32_t) * part_size);
   cudaMalloc(&d_o_orderkey, sizeof(int32_t) * orders_size);
   cudaMalloc(&d_l_partkey, sizeof(int32_t) * lineitem_size);
   cudaMalloc(&d_l_orderkey, sizeof(int32_t) * lineitem_size);
 
-  cudaMemcpy(d_p_partkey, p_partkey, sizeof(int32_t) * part_size, cudaMemcpyHostToDevice);
-  cudaMemcpy(d_o_orderkey, o_orderkey, sizeof(int32_t) * orders_size, cudaMemcpyHostToDevice);
-  cudaMemcpy(d_l_partkey, l_partkey, sizeof(int32_t) * lineitem_size, cudaMemcpyHostToDevice);
-  cudaMemcpy(d_l_orderkey, l_orderkey, sizeof(int32_t) * lineitem_size, cudaMemcpyHostToDevice);
+  cudaMemcpy(d_p_partkey, p_partkey.data(), sizeof(int32_t) * part_size, cudaMemcpyHostToDevice);
+  cudaMemcpy(
+    d_o_orderkey, o_orderkey.data(), sizeof(int32_t) * orders_size, cudaMemcpyHostToDevice);
+  cudaMemcpy(
+    d_l_partkey, l_partkey.data(), sizeof(int32_t) * lineitem_size, cudaMemcpyHostToDevice);
+  cudaMemcpy(
+    d_l_orderkey, l_orderkey.data(), sizeof(int32_t) * lineitem_size, cudaMemcpyHostToDevice);
 
   build_hash_primary_key_partname_filter<<<getGridSize(part_size, TB), TB>>>(
     p_partkey_map.ref(cuco::insert), d_p_partkey, part_size, d_char_data, d_offsets, d_sizes);
@@ -484,7 +493,7 @@ int main(int argc, const char** argv)
   multijoin_t_pol* pol_join = (multijoin_t_pol*)malloc(sizeof(multijoin_t_pol) * join_size);
   cudaMemcpy(pol_join, d_p_o_l_join, sizeof(multijoin_t_pol) * join_size, cudaMemcpyDeviceToHost);
   // std::map<std::pair<int32_t, int32_t>, int32_t> ps_map;
-  int32_t* l_suppkey = read_column_typecasted<int32_t>(lineitem_table, "l_suppkey");
+  auto l_suppkey = read_column_typecasted<int32_t>(lineitem_table, "l_suppkey");
   // for (size_t i=0; i<join_size; i++ ){
   //   ps_map[std::make_pair(l_suppkey[pol_join[i].l_idx], l_partkey[pol_join[i].l_idx])]++;
   // }
@@ -516,61 +525,65 @@ int main(int argc, const char** argv)
   thrust::device_vector<cuco::pair<int64_t, int64_t>> d_ls_lp_dict = h_ls_lp_dict;
   l_pskey_map.insert(d_ls_lp_dict.begin(), d_ls_lp_dict.end());
 
-
   cudaMemset(d_join_size, 0, sizeof(int32_t));
-  for_each_probe_size<<<getGridSize(n_s_ps_joinsize, TB), TB>>>(
-    l_pskey_map.ref(cuco::for_each), d_n_s_ps_join, d_s_supplierkey, d_ps_partkey, d_join_size,n_s_ps_joinsize);
+  for_each_probe_size<<<getGridSize(n_s_ps_joinsize, TB), TB>>>(l_pskey_map.ref(cuco::for_each),
+                                                                d_n_s_ps_join,
+                                                                d_s_supplierkey,
+                                                                d_ps_partkey,
+                                                                d_join_size,
+                                                                n_s_ps_joinsize);
   cudaMemcpy(&join_size, d_join_size, sizeof(int32_t), cudaMemcpyDeviceToHost);
   int32_t nsps_pol_joinsize = join_size;
   // std::cout << "all join size: " << nsps_pol_joinsize << "\n";
   nsps_pol_t* d_nsps_pol;
-  cudaMalloc(&d_nsps_pol, sizeof(nsps_pol_t)*nsps_pol_joinsize);
+  cudaMalloc(&d_nsps_pol, sizeof(nsps_pol_t) * nsps_pol_joinsize);
   auto agg_map =
-    cuco::static_map{nsps_pol_joinsize*2,
+    cuco::static_map{nsps_pol_joinsize * 2,
                      cuco::empty_key{(int64_t)-1},
                      cuco::empty_value<double>{0.},
                      thrust::equal_to<int64_t>{},
                      cuco::linear_probing<TILE_SIZE, cuco::default_hash_function<int64_t>>()};
   StringDictEncodedColumn* n_name = read_string_dict_encoded_column(nation_table, "n_name");
-  int32_t* o_orderdate = read_column<int32_t>(orders_table, "o_orderdate");
-  double* ps_supplycost = read_column<double>(partsupp_table, "ps_supplycost");
-  double* l_ep = read_column<double>(lineitem_table, "l_extendedprice");
-  double* l_disc = read_column<double>(lineitem_table, "l_discount");
-  int64_t* l_qty = read_column<int64_t>(lineitem_table, "l_quantity");
+  auto o_orderdate                = read_column<int32_t>(orders_table, "o_orderdate");
+  auto ps_supplycost              = read_column<double>(partsupp_table, "ps_supplycost");
+  auto l_ep                       = read_column<double>(lineitem_table, "l_extendedprice");
+  auto l_disc                     = read_column<double>(lineitem_table, "l_discount");
+  auto l_qty                      = read_column<int64_t>(lineitem_table, "l_quantity");
 
   int8_t* d_n_name;
   int32_t* d_o_orderdate;
-  int64_t *d_l_quantity;
-  double* d_l_extendedprice, *d_l_discount, *d_ps_supplycost;
-  cudaMalloc(&d_n_name, sizeof(int8_t)*nation_size);
-  cudaMalloc(&d_o_orderdate, sizeof(int32_t)*orders_size);
-  cudaMalloc(&d_l_quantity, sizeof(int64_t)*lineitem_size);
-  cudaMalloc(&d_l_extendedprice, sizeof(double)*lineitem_size);
-  cudaMalloc(&d_l_discount, sizeof(double)*lineitem_size);
-  cudaMalloc(&d_ps_supplycost, sizeof(double)*partsupp_size);
-  cudaMemcpy(d_n_name, n_name->column, sizeof(int8_t)*nation_size, cudaMemcpyHostToDevice);
-  cudaMemcpy(d_o_orderdate, o_orderdate, sizeof(int32_t)*orders_size, cudaMemcpyHostToDevice);
-  cudaMemcpy(d_l_quantity, l_qty, sizeof(int64_t)*lineitem_size, cudaMemcpyHostToDevice);
-  cudaMemcpy(d_l_extendedprice, l_ep, sizeof(double)*lineitem_size, cudaMemcpyHostToDevice);
-  cudaMemcpy(d_l_discount, l_disc, sizeof(double)*lineitem_size, cudaMemcpyHostToDevice);
-  cudaMemcpy(d_ps_supplycost, ps_supplycost, sizeof(double)*partsupp_size, cudaMemcpyHostToDevice);
+  int64_t* d_l_quantity;
+  double *d_l_extendedprice, *d_l_discount, *d_ps_supplycost;
+  cudaMalloc(&d_n_name, sizeof(int8_t) * nation_size);
+  cudaMalloc(&d_o_orderdate, sizeof(int32_t) * orders_size);
+  cudaMalloc(&d_l_quantity, sizeof(int64_t) * lineitem_size);
+  cudaMalloc(&d_l_extendedprice, sizeof(double) * lineitem_size);
+  cudaMalloc(&d_l_discount, sizeof(double) * lineitem_size);
+  cudaMalloc(&d_ps_supplycost, sizeof(double) * partsupp_size);
+  cudaMemcpy(d_n_name, n_name->column, sizeof(int8_t) * nation_size, cudaMemcpyHostToDevice);
+  cudaMemcpy(
+    d_o_orderdate, o_orderdate.data(), sizeof(int32_t) * orders_size, cudaMemcpyHostToDevice);
+  cudaMemcpy(d_l_quantity, l_qty.data(), sizeof(int64_t) * lineitem_size, cudaMemcpyHostToDevice);
+  cudaMemcpy(
+    d_l_extendedprice, l_ep.data(), sizeof(double) * lineitem_size, cudaMemcpyHostToDevice);
+  cudaMemcpy(d_l_discount, l_disc.data(), sizeof(double) * lineitem_size, cudaMemcpyHostToDevice);
+  cudaMemcpy(
+    d_ps_supplycost, ps_supplycost.data(), sizeof(double) * partsupp_size, cudaMemcpyHostToDevice);
 
-  for_each_probe<<<getGridSize(n_s_ps_joinsize, TB), TB>>>(
-    l_pskey_map.ref(cuco::for_each), 
-    d_n_s_ps_join, 
-    d_s_supplierkey, 
-    d_ps_partkey, 
-    d_p_o_l_join,
-    d_n_s_ps_join,
-    d_n_name,
-    d_o_orderdate,
-    d_l_extendedprice,
-    d_l_discount,
-    d_ps_supplycost,
-    d_l_quantity,
-    agg_map.ref(cuco::insert_and_find),
-    n_s_ps_joinsize
-  );
+  for_each_probe<<<getGridSize(n_s_ps_joinsize, TB), TB>>>(l_pskey_map.ref(cuco::for_each),
+                                                           d_n_s_ps_join,
+                                                           d_s_supplierkey,
+                                                           d_ps_partkey,
+                                                           d_p_o_l_join,
+                                                           d_n_s_ps_join,
+                                                           d_n_name,
+                                                           d_o_orderdate,
+                                                           d_l_extendedprice,
+                                                           d_l_discount,
+                                                           d_ps_supplycost,
+                                                           d_l_quantity,
+                                                           agg_map.ref(cuco::insert_and_find),
+                                                           n_s_ps_joinsize);
   auto agg_map_size = agg_map.size();
   // std::cout << "end of join probes\n";
   // std::cout << "Final grouped by count: " << agg_map_size << "\n";
@@ -581,10 +594,10 @@ int main(int argc, const char** argv)
   thrust::device_vector<int64_t> gb_keys(agg_map_size);
   agg_map.retrieve_all(gb_keys.begin(), sum_profit.begin());
 
-  for (int i=0; i<agg_map_size; i++) {
+  for (int i = 0; i < agg_map_size; i++) {
     int32_t year = (0xFFFFFFFF & gb_keys[i]);
-    int8_t name = (gb_keys[i] >> 32);
-    for (auto e: n_name->dict) {
+    int8_t name  = (gb_keys[i] >> 32);
+    for (auto e : n_name->dict) {
       if (e.second == name) {
         std::cout << e.first << "\t\t\t";
         break;
@@ -592,5 +605,4 @@ int main(int argc, const char** argv)
     }
     std::cout << year << " " << sum_profit[i] << "\n";
   }
-
 }

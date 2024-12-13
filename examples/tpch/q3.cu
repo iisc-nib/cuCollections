@@ -182,17 +182,17 @@ int main(int argc, const char** argv)
   auto customer_table  = getArrowTable(customer_file);
   size_t customer_size = customer_table->num_rows();
 
-  int64_t* l_orderkey     = read_column<int64_t>(lineitem_table, "l_orderkey");
-  int32_t* l_shipdate     = read_column<int32_t>(lineitem_table, "l_shipdate");
-  double* l_extendedprice = read_column<double>(lineitem_table, "l_extendedprice");
-  double* l_discount      = read_column<double>(lineitem_table, "l_discount");
+  auto l_orderkey      = read_column<int64_t>(lineitem_table, "l_orderkey");
+  auto l_shipdate      = read_column<int32_t>(lineitem_table, "l_shipdate");
+  auto l_extendedprice = read_column<double>(lineitem_table, "l_extendedprice");
+  auto l_discount      = read_column<double>(lineitem_table, "l_discount");
 
-  int64_t* o_orderkey     = read_column<int64_t>(orders_table, "o_orderkey");
-  int64_t* o_custkey      = read_column<int64_t>(orders_table, "o_custkey");
-  int32_t* o_orderdate    = read_column<int32_t>(orders_table, "o_orderdate");
-  int64_t* o_shippriority = read_column<int64_t>(orders_table, "o_shippriority");
+  auto o_orderkey     = read_column<int64_t>(orders_table, "o_orderkey");
+  auto o_custkey      = read_column<int64_t>(orders_table, "o_custkey");
+  auto o_orderdate    = read_column<int32_t>(orders_table, "o_orderdate");
+  auto o_shippriority = read_column<int64_t>(orders_table, "o_shippriority");
 
-  int32_t* c_custkey = read_column_typecasted<int32_t>(customer_table, "c_custkey");
+  auto c_custkey = read_column_typecasted<int32_t>(customer_table, "c_custkey");
   StringDictEncodedColumn* c_mktsegment =
     read_string_dict_encoded_column(customer_table, "c_mktsegment");
   int8_t building_code = c_mktsegment->dict["BUILDING"];
@@ -240,19 +240,27 @@ int main(int argc, const char** argv)
   cudaMalloc(&d_l_extendedprice, lineitem_size * sizeof(double));
   cudaMalloc(&d_l_discount, lineitem_size * sizeof(double));
 
-  cudaMemcpy(d_o_orderkey, o_orderkey, orders_size * sizeof(int64_t), cudaMemcpyHostToDevice);
-  cudaMemcpy(d_c_custkey, c_custkey, customer_size * sizeof(int32_t), cudaMemcpyHostToDevice);
-  cudaMemcpy(d_l_orderkey, l_orderkey, lineitem_size * sizeof(int64_t), cudaMemcpyHostToDevice);
-  cudaMemcpy(d_o_custkey, o_custkey, orders_size * sizeof(int64_t), cudaMemcpyHostToDevice);
   cudaMemcpy(
-    d_o_shippriority, o_shippriority, orders_size * sizeof(int64_t), cudaMemcpyHostToDevice);
-  cudaMemcpy(d_o_orderdate, o_orderdate, orders_size * sizeof(int32_t), cudaMemcpyHostToDevice);
+    d_o_orderkey, o_orderkey.data(), orders_size * sizeof(int64_t), cudaMemcpyHostToDevice);
+  cudaMemcpy(
+    d_c_custkey, c_custkey.data(), customer_size * sizeof(int32_t), cudaMemcpyHostToDevice);
+  cudaMemcpy(
+    d_l_orderkey, l_orderkey.data(), lineitem_size * sizeof(int64_t), cudaMemcpyHostToDevice);
+  cudaMemcpy(d_o_custkey, o_custkey.data(), orders_size * sizeof(int64_t), cudaMemcpyHostToDevice);
+  cudaMemcpy(
+    d_o_shippriority, o_shippriority.data(), orders_size * sizeof(int64_t), cudaMemcpyHostToDevice);
+  cudaMemcpy(
+    d_o_orderdate, o_orderdate.data(), orders_size * sizeof(int32_t), cudaMemcpyHostToDevice);
   cudaMemcpy(
     d_c_mktsegment, c_mktsegment->column, customer_size * sizeof(int8_t), cudaMemcpyHostToDevice);
-  cudaMemcpy(d_l_shipdate, l_shipdate, lineitem_size * sizeof(int32_t), cudaMemcpyHostToDevice);
   cudaMemcpy(
-    d_l_extendedprice, l_extendedprice, lineitem_size * sizeof(double), cudaMemcpyHostToDevice);
-  cudaMemcpy(d_l_discount, l_discount, lineitem_size * sizeof(double), cudaMemcpyHostToDevice);
+    d_l_shipdate, l_shipdate.data(), lineitem_size * sizeof(int32_t), cudaMemcpyHostToDevice);
+  cudaMemcpy(d_l_extendedprice,
+             l_extendedprice.data(),
+             lineitem_size * sizeof(double),
+             cudaMemcpyHostToDevice);
+  cudaMemcpy(
+    d_l_discount, l_discount.data(), lineitem_size * sizeof(double), cudaMemcpyHostToDevice);
 
   int threadBlockSize = 1024;
   build_hash_order<<<getGridSize(orders_size, threadBlockSize), threadBlockSize>>>(

@@ -83,25 +83,30 @@ int main(int argc, const char** argv)
   auto lineitem_table  = getArrowTable(lineitem_file);
   size_t lineitem_size = lineitem_table->num_rows();
 
-  int32_t* l_shipdate     = read_column<int32_t>(lineitem_table, "l_shipdate");
-  int64_t* l_quantity     = read_column<int64_t>(lineitem_table, "l_quantity");
-  double* l_discount      = read_column<double>(lineitem_table, "l_discount");
-  double* l_extendedprice = read_column<double>(lineitem_table, "l_extendedprice");
+  auto l_shipdate      = read_column<int32_t>(lineitem_table, "l_shipdate");
+  auto l_quantity      = read_column<int64_t>(lineitem_table, "l_quantity");
+  auto l_discount      = read_column<double>(lineitem_table, "l_discount");
+  auto l_extendedprice = read_column<double>(lineitem_table, "l_extendedprice");
 
   int32_t* d_l_shipdate;
   cudaMalloc(&d_l_shipdate, sizeof(int32_t) * lineitem_size);
-  cudaMemcpy(d_l_shipdate, l_shipdate, sizeof(int32_t) * lineitem_size, cudaMemcpyHostToDevice);
+  cudaMemcpy(
+    d_l_shipdate, l_shipdate.data(), sizeof(int32_t) * lineitem_size, cudaMemcpyHostToDevice);
 
   double *d_l_extendedprice, *d_l_discount;
   cudaMalloc(&d_l_extendedprice, sizeof(double) * lineitem_size);
-  cudaMemcpy(
-    d_l_extendedprice, l_extendedprice, sizeof(double) * lineitem_size, cudaMemcpyHostToDevice);
+  cudaMemcpy(d_l_extendedprice,
+             l_extendedprice.data(),
+             sizeof(double) * lineitem_size,
+             cudaMemcpyHostToDevice);
   cudaMalloc(&d_l_discount, sizeof(double) * lineitem_size);
-  cudaMemcpy(d_l_discount, l_discount, sizeof(double) * lineitem_size, cudaMemcpyHostToDevice);
+  cudaMemcpy(
+    d_l_discount, l_discount.data(), sizeof(double) * lineitem_size, cudaMemcpyHostToDevice);
 
   int64_t* d_l_quantity;
   cudaMalloc(&d_l_quantity, sizeof(int64_t) * lineitem_size);
-  cudaMemcpy(d_l_quantity, l_quantity, sizeof(int64_t) * lineitem_size, cudaMemcpyHostToDevice);
+  cudaMemcpy(
+    d_l_quantity, l_quantity.data(), sizeof(int64_t) * lineitem_size, cudaMemcpyHostToDevice);
 
   size_t TB = 32;
   double* d_res;
