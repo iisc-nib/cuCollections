@@ -56,16 +56,21 @@ int main(int argc, const char** argv) {
   StringDictEncodedColumn* l_linestatus =
     read_string_dict_encoded_column(lineitem_table, "l_linestatus");
 
-  int32_t* l_shipdate     = read_column<int32_t>(lineitem_table, "l_shipdate");
-  double* l_extendedprice = read_column<double>(lineitem_table, "l_extendedprice");
+  auto l_shipdate     = read_column<int32_t>(lineitem_table, "l_shipdate");
+  auto l_extendedprice = read_column<double>(lineitem_table, "l_extendedprice");
 
   int8_t *d_l_returnflag, *d_l_linestatus;
   int32_t *d_l_shipdate;
   double *d_l_extendedprice;
-  allocate_to_device<int8_t>(d_l_returnflag, l_returnflag->column, lineitem_size);
-  allocate_to_device<int8_t>(d_l_linestatus, l_linestatus->column, lineitem_size);
-  allocate_to_device<int32_t>(d_l_shipdate, l_shipdate, lineitem_size);
-  allocate_to_device<double>(d_l_extendedprice, l_extendedprice, lineitem_size);
+  cudaMalloc(&d_l_returnflag, lineitem_size*sizeof(int8_t));
+  cudaMemcpy(d_l_returnflag, l_returnflag->column, lineitem_size*sizeof(int8_t), cudaMemcpyHostToDevice);
+  cudaMalloc(&d_l_linestatus, lineitem_size * sizeof(int8_t));
+  cudaMemcpy(d_l_linestatus, l_linestatus->column, lineitem_size * sizeof(int8_t), cudaMemcpyHostToDevice);
+  cudaMalloc(&d_l_shipdate, lineitem_size * sizeof(int32_t));
+  cudaMemcpy(d_l_shipdate, l_shipdate.data(), lineitem_size * sizeof(int32_t), cudaMemcpyHostToDevice);
+  cudaMalloc(&d_l_extendedprice, lineitem_size * sizeof(double));
+  cudaMemcpy(d_l_extendedprice, l_extendedprice.data(), lineitem_size * sizeof(double), cudaMemcpyHostToDevice);
+
 
   size_t groups_cardinality = l_returnflag->dict.size() * l_linestatus->dict.size();
   double *d_res;
